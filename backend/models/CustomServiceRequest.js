@@ -61,7 +61,9 @@ customServiceRequestSchema.pre('save', function (next) {
   next();
 });
 
-// Add 2dsphere index
+// Indexes for geo search, customer history, and status filtering
 customServiceRequestSchema.index({ location: '2dsphere' });
+customServiceRequestSchema.index({ customerId: 1, createdAt: -1 });
+customServiceRequestSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('CustomServiceRequest', customServiceRequestSchema);

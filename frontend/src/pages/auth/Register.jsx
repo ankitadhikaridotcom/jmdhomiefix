@@ -6,6 +6,7 @@ import { FaUser, FaEnvelope, FaLock, FaEye, FaEyeSlash, FaArrowRight } from 'rea
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import BrandLogo from '../../components/common/BrandLogo';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -33,10 +34,7 @@ const Register = () => {
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSA2MCAwIEwgMCAwIDAgNjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjA1KSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-50" />
         <div className="relative z-10 flex flex-col justify-center px-12 xl:px-16 text-white">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
-            <Link to="/" className="flex items-center gap-2 mb-8">
-              <span className="text-4xl">🏠</span>
-              <span className="text-2xl font-bold">Home<span className="text-secondary-400">Fix</span></span>
-            </Link>
+            <BrandLogo size="lg" artwork className="mb-8" />
             <h1 className="text-3xl xl:text-4xl font-bold leading-tight">
               Get home services<br />without the hassle.
             </h1>
@@ -67,10 +65,7 @@ const Register = () => {
           className="w-full max-w-md"
         >
           <div className="lg:hidden text-center mb-6">
-            <Link to="/" className="inline-flex items-center gap-2">
-              <span className="text-3xl">🏠</span>
-              <span className="text-2xl font-bold text-gray-900">Home<span className="text-primary-600">Fix</span></span>
-            </Link>
+            <BrandLogo size="md" />
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">

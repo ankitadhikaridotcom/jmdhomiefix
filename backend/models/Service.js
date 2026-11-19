@@ -70,4 +70,8 @@ serviceSchema.pre('validate', function (next) {
   next();
 });
 
+serviceSchema.index({ category: 1, isActive: 1 });
+serviceSchema.index({ provider: 1, isActive: 1 });
+serviceSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('Service', serviceSchema);

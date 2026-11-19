@@ -1,13 +1,32 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom';
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
-import { FaChartBar, FaClipboardList, FaMoneyBillWave, FaStar, FaUser, FaCog, FaUsers, FaUserTie, FaBoxOpen, FaCreditCard, FaCalendarAlt, FaBriefcase, FaBell, FaCommentAlt } from 'react-icons/fa';
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Wallet,
+  Star,
+  User,
+  Users,
+  UserCheck,
+  Package,
+  Briefcase,
+  Bell,
+  MessageSquare,
+  Menu,
+  ArrowRight,
+  Home as HomeIcon,
+  HelpCircle,
+  ShieldCheck,
+  AlertCircle
+} from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/common/Navbar';
 import Footer from './components/common/Footer';
 import Sidebar from './components/common/Sidebar';
+import BrandLogo from './components/common/BrandLogo';
 import { PageLoader } from './components/common/LoadingSpinner';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -37,11 +56,13 @@ import ProviderReviews from './pages/provider/ProviderReviews';
 import ProviderNotifications from './pages/provider/ProviderNotifications';
 import AddService from './pages/provider/AddService';
 import ProviderCustomRequests from './pages/provider/ProviderCustomRequests';
+import ProviderOnboarding from './pages/provider/ProviderOnboarding';
+import ManageProviderApplications from './pages/admin/ManageProviderApplications';
+import ManageProviders from './pages/admin/ManageProviders';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ManageUsers from './pages/admin/ManageUsers';
-import ManageProviders from './pages/admin/ManageProviders';
 import ManageServices from './pages/admin/ManageServices';
 import AdminBookings from './pages/admin/AdminBookings';
 
@@ -49,8 +70,6 @@ import AdminBookings from './pages/admin/AdminBookings';
 import About from './pages/customer/About';
 import Terms from './pages/customer/Terms';
 import Help from './pages/customer/Help';
-
-
 
 // Page transition wrapper
 const PageTransition = ({ children }) => {
@@ -70,35 +89,46 @@ const PageTransition = ({ children }) => {
   );
 };
 
-// Provider Layout
+// Provider Layout Links with Lucide Icons
 const providerLinks = [
-  { to: '/provider', label: 'Dashboard', icon: FaChartBar, end: true },
-  { to: '/provider/bookings', label: 'Bookings', icon: FaClipboardList },
-  { to: '/provider/services', label: 'My Services', icon: FaBriefcase },
-  { to: '/provider/custom-requests', label: 'Custom Requests', icon: FaCommentAlt },
-  { to: '/provider/earnings', label: 'Earnings', icon: FaMoneyBillWave },
-  { to: '/provider/reviews', label: 'Reviews', icon: FaStar },
-  { to: '/provider/notifications', label: 'Notifications', icon: FaBell },
-  { to: '/provider/profile', label: 'My Profile', icon: FaUser },
+  { to: '/provider', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/provider/bookings', label: 'Bookings', icon: ClipboardList },
+  { to: '/provider/services', label: 'My Services', icon: Briefcase },
+  { to: '/provider/custom-requests', label: 'Custom Requests', icon: MessageSquare },
+  { to: '/provider/earnings', label: 'Earnings', icon: Wallet },
+  { to: '/provider/reviews', label: 'Reviews', icon: Star },
+  { to: '/provider/notifications', label: 'Notifications', icon: Bell },
+  { to: '/provider/profile', label: 'My Profile', icon: User },
 ];
 
 const ProviderLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-slate-50">
       <Sidebar links={providerLinks} title="Provider" isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 min-w-0">
         {/* Top Bar for provider */}
-        <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-6 py-3 flex items-center justify-between lg:hidden">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-100">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+        <div className="sticky top-0 z-30 bg-white/85 backdrop-blur-md border-b border-slate-200/80 px-6 py-3.5 flex items-center justify-between lg:hidden shadow-sm">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+            aria-label="Open sidebar"
+          >
+            <Menu className="w-5 h-5" />
           </button>
-          <span className="text-sm font-bold text-gray-900">🏠 Home<span className="text-primary-600">Fix</span></span>
+          <BrandLogo size="sm" />
           <div className="w-9" />
         </div>
-        <main className="p-4 md:p-6 lg:p-8">
+        <main className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
+          <div className="mb-6 flex justify-end">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs md:text-sm font-semibold text-slate-700 shadow-sm transition hover:border-[#0EA5E9] hover:text-[#0284C7] hover:bg-sky-50/50"
+            >
+              <HomeIcon className="w-4 h-4 text-slate-400" />
+              <span>Switch to Customer Home</span>
+            </Link>
+          </div>
           <Outlet />
         </main>
       </div>
@@ -106,31 +136,39 @@ const ProviderLayout = () => {
   );
 };
 
-// Admin Layout
+// Admin Layout Links with Lucide Icons
 const adminLinks = [
-  { to: '/admin', label: 'Dashboard', icon: FaChartBar, end: true },
-  { to: '/admin/bookings', label: 'Bookings', icon: FaClipboardList },
-  { to: '/admin/users', label: 'Users', icon: FaUsers },
-  { to: '/admin/providers', label: 'Providers', icon: FaUserTie, badge: '12' },
-  { to: '/admin/services', label: 'Services', icon: FaBoxOpen },
+  { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/admin/bookings', label: 'Bookings', icon: ClipboardList },
+  { to: '/admin/users', label: 'Users', icon: Users },
+  { to: '/admin/providers', label: 'Active Providers', icon: UserCheck },
+  { to: '/admin/provider-applications', label: 'Applications', icon: Briefcase },
+  { to: '/admin/services', label: 'Services', icon: Package },
 ];
 
 const AdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-slate-50">
       <Sidebar links={adminLinks} title="Admin" isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 min-w-0">
-        <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-6 py-3 flex items-center justify-between lg:hidden">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-100">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+        <div className="sticky top-0 z-30 bg-white/85 backdrop-blur-md border-b border-slate-200/80 px-6 py-3.5 flex items-center justify-between lg:hidden shadow-sm">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+            aria-label="Open sidebar"
+          >
+            <Menu className="w-5 h-5" />
           </button>
-          <span className="text-sm font-bold text-gray-900">🏠 Home<span className="text-primary-600">Fix</span> Admin</span>
+          <div className="flex items-center gap-2">
+            <BrandLogo size="sm" />
+            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+              Admin
+            </span>
+          </div>
           <div className="w-9" />
         </div>
-        <main className="p-4 md:p-6 lg:p-8">
+        <main className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
           <Outlet />
         </main>
       </div>
@@ -141,24 +179,47 @@ const AdminLayout = () => {
 // Public Layout
 const PublicLayout = () => {
   return (
-    <>
+    <div className="flex min-h-screen flex-col bg-slate-50">
       <Navbar />
-      <main className="min-h-screen">
+      <main className="flex-1">
         <Outlet />
       </main>
       <Footer />
-    </>
+    </div>
   );
 };
 
-// 404
+// Root redirect: unauthenticated → /login, authenticated → Home
+const RootRedirect = () => {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <Home />;
+};
+
+// Modern 404
 const NotFound = () => (
-  <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
-      <span className="text-8xl">🏚️</span>
-      <h1 className="text-4xl font-bold text-gray-900 mt-6">404</h1>
-      <p className="text-gray-500 mt-2">Oops! This page doesn't exist</p>
-      <a href="/" className="btn-primary mt-6 inline-block">Go Home</a>
+  <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="max-w-md w-full bg-white p-8 md:p-10 rounded-2xl border border-slate-200/80 shadow-lg text-center"
+    >
+      <div className="w-16 h-16 rounded-2xl bg-sky-50 text-[#0284C7] mx-auto flex items-center justify-center mb-6">
+        <AlertCircle className="w-8 h-8 stroke-[1.75]" />
+      </div>
+      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Error 404</span>
+      <h1 className="text-3xl font-extrabold text-slate-900 mt-2 mb-3">Page not found</h1>
+      <p className="text-sm text-slate-500 leading-relaxed mb-6">
+        The page you are looking for might have been moved, removed, or is temporarily unavailable.
+      </p>
+      <Link
+        to="/"
+        className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl bg-[#0EA5E9] hover:bg-[#0284C7] text-white font-semibold text-sm shadow-sm transition hover:shadow focus:ring-2 focus:ring-[#0EA5E9]/40"
+      >
+        <HomeIcon className="w-4 h-4" />
+        <span>Return to Home</span>
+      </Link>
     </motion.div>
   </div>
 );
@@ -166,16 +227,17 @@ const NotFound = () => (
 function App() {
   return (
     <BrowserRouter>
-        <AuthProvider>
+      <AuthProvider>
         <Toaster
           position="top-right"
           toastOptions={{
             duration: 3000,
             style: {
               background: '#ffffff',
-              color: '#1f2937',
-              boxShadow: '0 10px 25px rgba(0,0,0,0.08)',
-              borderRadius: '12px',
+              color: '#0F172A',
+              boxShadow: '0 10px 25px -5px rgba(15,23,42,0.1), 0 8px 10px -6px rgba(15,23,42,0.05)',
+              borderRadius: '16px',
+              border: '1px solid #E2E8F0',
               padding: '14px 18px',
               fontSize: '14px',
               fontWeight: '500',
@@ -190,16 +252,16 @@ function App() {
 
           {/* Provider Routes */}
           <Route path="/provider" element={<ProtectedRoute allowedRoles={['provider']}><ProviderLayout /></ProtectedRoute>}>
-              <Route index element={<ProviderDashboard />} />
-              <Route path="bookings" element={<ProviderBookings />} />
-              <Route path="services" element={<ProviderServices />} />
-              <Route path="earnings" element={<ProviderEarnings />} />
-              <Route path="profile" element={<ProviderProfile />} />
-              <Route path="reviews" element={<ProviderReviews />} />
-              <Route path="notifications" element={<ProviderNotifications />} />
-              <Route path="add-service" element={<AddService />} />
-              <Route path="custom-requests" element={<ProviderCustomRequests />} />
-            </Route>
+            <Route index element={<ProviderDashboard />} />
+            <Route path="bookings" element={<ProviderBookings />} />
+            <Route path="services" element={<ProviderServices />} />
+            <Route path="earnings" element={<ProviderEarnings />} />
+            <Route path="profile" element={<ProviderProfile />} />
+            <Route path="reviews" element={<ProviderReviews />} />
+            <Route path="notifications" element={<ProviderNotifications />} />
+            <Route path="add-service" element={<AddService />} />
+            <Route path="custom-requests" element={<ProviderCustomRequests />} />
+          </Route>
 
           {/* Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout /></ProtectedRoute>}>
@@ -207,12 +269,13 @@ function App() {
             <Route path="bookings" element={<AdminBookings />} />
             <Route path="users" element={<ManageUsers />} />
             <Route path="providers" element={<ManageProviders />} />
+            <Route path="provider-applications" element={<ManageProviderApplications />} />
             <Route path="services" element={<ManageServices />} />
           </Route>
 
           {/* Public + Customer Routes */}
           <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<RootRedirect />} />
             <Route path="/services" element={<Services />} />
             <Route path="/services/:id" element={<ServiceDetail />} />
             
@@ -225,6 +288,7 @@ function App() {
             <Route path="/booking" element={<ProtectedRoute allowedRoles={['customer']}><Booking /></ProtectedRoute>} />
             <Route path="/my-bookings" element={<ProtectedRoute allowedRoles={['customer']}><MyBookings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute allowedRoles={['customer']}><CustomerProfile /></ProtectedRoute>} />
+            <Route path="/provider-application" element={<ProtectedRoute allowedRoles={['customer']}><ProviderOnboarding /></ProtectedRoute>} />
             <Route path="/my-addresses" element={<ProtectedRoute allowedRoles={['customer']}><MyAddresses /></ProtectedRoute>} />
             
             {/* Custom Service Routes */}

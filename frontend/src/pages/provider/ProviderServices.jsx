@@ -7,9 +7,7 @@ import {
 } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 
-const API = 'http://localhost:5000';
-
-const categories = ['Cleaning', 'Plumbing', 'Electrical', 'Painting', 'Carpentry', 'Appliances', 'Pest Control', 'Home Security', 'Handyman', 'Other'];
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const categoryIcons = {
   Cleaning: '🧹', Plumbing: '🚿', Electrical: '⚡', Painting: '🎨',
@@ -24,7 +22,7 @@ const pricingLabel = (service) => {
   return `₹${service.price}`;
 };
 
-const EditModal = ({ service, onClose, onSave }) => {
+const EditModal = ({ service, categories, onClose, onSave }) => {
   const [form, setForm] = useState({
     name: service.name,
     category: service.category,
@@ -144,6 +142,7 @@ const EditModal = ({ service, onClose, onSave }) => {
 const ProviderServices = () => {
   const navigate = useNavigate();
   const [services, setServices] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -151,6 +150,10 @@ const ProviderServices = () => {
   const [editingService, setEditingService] = useState(null);
 
   useEffect(() => {
+    fetch(`${API}/api/service-categories`)
+      .then((response) => response.json())
+      .then((data) => data.success && setCategories((data.categories || []).map((category) => category.name)))
+      .catch((error) => toast.error(error.message || 'Failed to load service categories.'));
     const loadServices = async () => {
       try {
         const res = await fetch(`${API}/api/services/me`, { credentials: 'include' });
@@ -228,6 +231,7 @@ const ProviderServices = () => {
         {editingService && (
           <EditModal
             service={editingService}
+            categories={categories}
             onClose={() => setEditingService(null)}
             onSave={handleEditSave}
           />

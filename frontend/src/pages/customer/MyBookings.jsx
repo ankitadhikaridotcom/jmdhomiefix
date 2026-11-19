@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { ClipboardList, Calendar, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import BookingCard from '../../components/customer/BookingCard';
-import { ListSkeleton, EmptyState } from '../../components/common/LoadingSpinner';
+import { ListSkeleton } from '../../components/common/LoadingSpinner';
+import EmptyState from '../../components/common/ui/EmptyState';
 import WriteReviewModal from '../../components/customer/WriteReviewModal';
 
 const tabs = ['all', 'upcoming', 'ongoing', 'completed', 'cancelled'];
@@ -56,7 +58,7 @@ const MyBookings = () => {
       const data = await res.json();
       if (!data.success) throw new Error();
 
-      setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
+      setBookings(prev => prev.map(b => b.id === id || b._id === id ? { ...b, status: 'cancelled' } : b));
       toast.success('Booking cancelled successfully');
     } catch (err) {
       toast.error('Failed to cancel booking');
@@ -76,15 +78,19 @@ const MyBookings = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 sm:pb-0">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">My Bookings</h1>
-          <p className="text-gray-500 text-sm mt-1">Track and manage your service bookings</p>
+    <div className="min-h-screen bg-slate-50 pb-20 sm:pb-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0F1D33] tracking-tight">
+            My Bookings
+          </h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
+            Track real-time service status, manage appointments, and approve repair quotes.
+          </p>
         </motion.div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mt-6 bg-gray-100 p-1 rounded-xl overflow-x-auto no-scrollbar">
+        {/* Filter Tabs */}
+        <div className="flex gap-1.5 mt-6 bg-slate-200/70 p-1.5 rounded-2xl overflow-x-auto no-scrollbar">
           {tabs.map((tab) => {
             const count = tab === 'all'
               ? bookings.length
@@ -93,26 +99,36 @@ const MyBookings = () => {
                   if (tab === 'ongoing') return b.status === 'ongoing' || b.status === 'quote_sent' || b.status === 'quote_approved';
                   return b.status === tab;
                 }).length;
+            const isActive = activeTab === tab;
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium capitalize transition-all whitespace-nowrap
-                          ${activeTab === tab
-                            ? 'bg-white text-primary-600 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
-                          }`}
+                className={`flex-1 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold capitalize transition-all duration-150 whitespace-nowrap flex items-center justify-center gap-1.5 cursor-pointer ${
+                  isActive
+                    ? 'bg-white text-[#0284C7] shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
               >
-                {tab} {count > 0 && <span className="text-xs opacity-60">({count})</span>}
+                <span>{tab}</span>
+                {count > 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md font-mono ${
+                    isActive ? 'bg-sky-100 text-[#0284C7]' : 'bg-slate-300/60 text-slate-600'
+                  }`}>
+                    {count}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* Booking List */}
+        {/* Booking Cards List */}
         <div className="mt-6 space-y-4">
           {loading ? (
-            <ListSkeleton rows={3} />
+            <div className="space-y-4">
+              <ListSkeleton rows={3} />
+            </div>
           ) : filtered.length > 0 ? (
             filtered.map((booking, i) => (
               <BookingCard
@@ -125,15 +141,16 @@ const MyBookings = () => {
             ))
           ) : (
             <EmptyState
-              icon="📋"
-              title="No bookings here"
-              description={`You don't have any ${activeTab === 'all' ? '' : activeTab + ' '}bookings yet.`}
-              actionText="Browse Services"
+              icon={ClipboardList}
+              title="No bookings found"
+              description={`You don't have any ${activeTab === 'all' ? '' : activeTab + ' '}bookings recorded yet.`}
+              actionLabel="Discover Services"
               onAction={() => navigate('/services')}
             />
           )}
         </div>
       </div>
+
       <WriteReviewModal
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}

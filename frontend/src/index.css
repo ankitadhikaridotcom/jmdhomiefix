@@ -46,15 +46,15 @@
   }
 
   .gradient-primary {
-    @apply bg-gradient-to-r from-primary-600 to-primary-700;
+    background: linear-gradient(135deg, #152D50 0%, #20A5C2 100%);
   }
 
   .gradient-secondary {
-    @apply bg-gradient-to-r from-secondary-500 to-secondary-600;
+    background: linear-gradient(135deg, #FF7A1A 0%, #e06200 100%);
   }
 
   .gradient-hero {
-    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+    background: linear-gradient(135deg, #152D50 0%, #1a8fab 50%, #20A5C2 100%);
   }
 
   .gradient-card {
@@ -70,11 +70,11 @@
   }
 
   .btn-primary {
-    @apply bg-primary-600 text-white px-6 py-3 rounded-xl font-semibold
-           hover:bg-primary-700 active:bg-primary-800
+    @apply bg-primary-500 text-white px-6 py-3 rounded-xl font-semibold
+           hover:bg-primary-600 active:bg-primary-700
            transition-all duration-200 ease-in-out
            shadow-sm hover:shadow-md
-           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+           focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2;
   }
 
   .btn-secondary {
@@ -86,10 +86,10 @@
   }
 
   .btn-outline {
-    @apply border-2 border-primary-600 text-primary-600 px-6 py-3 rounded-xl font-semibold
+    @apply border-2 border-primary-500 text-primary-500 px-6 py-3 rounded-xl font-semibold
            hover:bg-primary-50 active:bg-primary-100
            transition-all duration-200 ease-in-out
-           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+           focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2;
   }
 
   .btn-ghost {
@@ -101,7 +101,7 @@
   .input-field {
     @apply w-full px-4 py-3 rounded-xl border border-gray-200
            bg-white text-gray-900 placeholder-gray-400
-           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+           focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent
            transition-all duration-200;
   }
 
@@ -148,7 +148,7 @@
   }
 
   .sidebar-link-active {
-    @apply sidebar-link bg-primary-50 text-primary-600 font-semibold;
+    @apply sidebar-link bg-primary-50 text-primary-700 font-semibold;
   }
 
   .stat-card {
@@ -166,11 +166,13 @@
 
 @layer utilities {
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-400;
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #152D50, #20A5C2);
   }
 
   .text-gradient-warm {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-secondary-500 to-orange-500;
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #FF7A1A, #e06200);
   }
 
   .no-scrollbar::-webkit-scrollbar {

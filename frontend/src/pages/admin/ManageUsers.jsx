@@ -1,110 +1,120 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { FaSearch, FaEye, FaBan, FaTrash, FaUserCheck } from 'react-icons/fa';
+import { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import toast from 'react-hot-toast';
-// TODO: Replace with API call to fetch users from backend
+import { FaBan, FaSearch, FaUserCheck } from 'react-icons/fa';
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const ManageUsers = () => {
-  const [userList, setUserList] = useState([]);
+  const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
 
-  const filtered = userList.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || u.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  useEffect(() => {
+    let active = true;
+    axios.get(`${API}/api/admin/users`, { withCredentials: true })
+      .then(({ data }) => {
+        if (active && data.success) setUsers(data.users || []);
+      })
+      .catch((error) => toast.error(error.response?.data?.message || 'Failed to load users.'))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, []);
 
-  const handleBlock = (id) => {
-    setUserList(prev => prev.map(u => u.id === id ? { ...u, status: u.status === 'blocked' ? 'active' : 'blocked' } : u));
-    toast.success('User status updated');
-  };
+  const filtered = useMemo(() => users.filter((user) => {
+    const matchesSearch = `${user.name} ${user.email} ${user.phone}`.toLowerCase().includes(search.toLowerCase());
+    const provider = user.providerStatus && user.providerStatus !== 'not_applied';
+    const matchesRole = roleFilter === 'all'
+      || (roleFilter === 'provider' ? provider || user.role === 'provider' : user.role === roleFilter);
+    return matchesSearch && matchesRole;
+  }), [users, search, roleFilter]);
 
-  const handleDelete = (id) => {
-    setUserList(prev => prev.filter(u => u.id !== id));
-    toast.success('User deleted');
+  const updateStatus = async (user) => {
+    const status = user.accountStatus === 'suspended' ? 'active' : 'suspended';
+    try {
+      const { data } = await axios.put(
+        `${API}/api/admin/users/${user._id}/status`,
+        { status },
+        { withCredentials: true },
+      );
+      setUsers((current) => current.map((item) => item._id === user._id
+        ? { ...item, accountStatus: data.user.accountStatus }
+        : item));
+      toast.success(data.message);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update account status.');
+    }
   };
 
   return (
     <div className="space-y-6">
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Manage Users</h1>
-        <p className="text-gray-500 text-sm mt-1">{userList.length} registered users</p>
-      </motion.div>
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Account administration</p>
+        <h1 className="mt-2 text-3xl font-extrabold text-slate-950">Customers and providers</h1>
+        <p className="mt-1 text-sm text-slate-500">{users.length} accounts · Provider applications do not create duplicate accounts.</p>
+      </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
-          <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search users..." className="input-field pl-11 !py-2.5" />
+          <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or phone" className="input-field pl-11" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-field !w-auto !py-2.5 text-sm">
-          <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="blocked">Blocked</option>
+        <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="input-field !w-auto">
+          <option value="all">All accounts</option><option value="customer">Customers</option><option value="provider">Provider applicants</option>
         </select>
       </div>
 
-      {/* Table */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="table-header">
-                <th className="px-6 py-3">#</th>
-                <th className="px-6 py-3">User</th>
-                <th className="px-6 py-3">Phone</th>
-                <th className="px-6 py-3">Role</th>
-                <th className="px-6 py-3">Joined</th>
-                <th className="px-6 py-3">Bookings</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((u, i) => (
-                <motion.tr
-                  key={u.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="border-b border-gray-50 hover:bg-gray-50/50"
-                >
-                  <td className="table-cell text-gray-400">{i + 1}</td>
-                  <td className="table-cell">
-                    <div>
-                      <p className="font-medium text-gray-900">{u.name}</p>
-                      <p className="text-xs text-gray-400">{u.email}</p>
-                    </div>
-                  </td>
-                  <td className="table-cell">{u.phone}</td>
-                  <td className="table-cell"><span className="badge-primary capitalize">{u.role}</span></td>
-                  <td className="table-cell">{u.joinedDate}</td>
-                  <td className="table-cell">{u.bookings}</td>
-                  <td className="table-cell">
-                    <span className={`badge ${u.status === 'active' ? 'badge-success' : 'badge-danger'}`}>{u.status}</span>
-                  </td>
-                  <td className="table-cell">
-                    <div className="flex items-center gap-1">
-                      <button className="p-2 rounded-lg hover:bg-primary-50 text-primary-600 transition-colors" title="View"><FaEye className="text-sm" /></button>
-                      <button onClick={() => handleBlock(u.id)} className="p-2 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Block/Unblock">
-                        {u.status === 'blocked' ? <FaUserCheck className="text-sm" /> : <FaBan className="text-sm" />}
-                      </button>
-                      <button onClick={() => handleDelete(u.id)} className="p-2 rounded-lg hover:bg-red-50 text-red-600 transition-colors" title="Delete"><FaTrash className="text-sm" /></button>
-                    </div>
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {filtered.length === 0 && (
-          <div className="text-center py-12">
-            <span className="text-4xl">🔍</span>
-            <p className="text-gray-500 mt-3">No users found matching your search</p>
+      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+        {loading ? (
+          <p className="p-10 text-center text-sm text-slate-500">Loading accounts…</p>
+        ) : filtered.length === 0 ? (
+          <p className="p-10 text-center text-sm text-slate-500">No matching accounts.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr><th className="px-5 py-4">Account</th><th className="px-5 py-4">Phone</th><th className="px-5 py-4">Mode / application</th><th className="px-5 py-4">Bookings</th><th className="px-5 py-4">Joined</th><th className="px-5 py-4">Status</th><th className="px-5 py-4">Action</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((user) => {
+                  const hasProviderApplication = Boolean(user.providerStatus && user.providerStatus !== 'not_applied');
+                  const isLegacyProvider = user.role === 'provider';
+                  const accountLabel = isLegacyProvider ? 'Provider account' : user.role === 'admin' ? 'Admin' : 'Customer';
+                  return (
+                    <tr key={user._id} className="hover:bg-slate-50/70">
+                      <td className="px-5 py-4">
+                        <p className="font-semibold text-slate-900">{user.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{user.email}</p>
+                      </td>
+                      <td className="px-5 py-4 text-slate-600">{user.phone || '—'}</td>
+                      <td className="px-5 py-4">
+                        <p className="font-medium text-slate-800">{accountLabel}</p>
+                        {hasProviderApplication && <p className="mt-1 text-xs capitalize text-emerald-700">Provider: {user.providerStatus.replace('_', ' ')}</p>}
+                      </td>
+                      <td className="px-5 py-4 text-slate-600">{user.bookings || 0}</td>
+                      <td className="px-5 py-4 text-slate-500">{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}</td>
+                      <td className="px-5 py-4">
+                        <span className={`rounded-full px-3 py-1 text-xs font-bold ${user.accountStatus === 'suspended' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                          {user.accountStatus || 'active'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        {user.role !== 'admin' && (
+                          <button onClick={() => updateStatus(user)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold ${user.accountStatus === 'suspended' ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}>
+                            {user.accountStatus === 'suspended' ? <FaUserCheck /> : <FaBan />}
+                            {user.accountStatus === 'suspended' ? 'Reactivate' : 'Suspend'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 };

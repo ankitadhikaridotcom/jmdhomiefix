@@ -7,29 +7,35 @@ export default {
   theme: {
     extend: {
       colors: {
+        // HomeFix brand palette — matches logo colours
         primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
+          50:  '#e8f4f8',
+          100: '#c5e3ef',
+          200: '#9fd0e5',
+          300: '#6fbcd9',
+          400: '#3facd1',
+          500: '#20A5C2', // logo cyan
+          600: '#1a8fab',
+          700: '#147591',
+          800: '#0e5b72',
+          900: '#152D50', // logo navy
         },
         secondary: {
-          50: '#fffbeb',
-          100: '#fef3c7',
-          200: '#fde68a',
-          300: '#fcd34d',
-          400: '#fbbf24',
-          500: '#f59e0b',
-          600: '#d97706',
-          700: '#b45309',
-          800: '#92400e',
-          900: '#78350f',
+          50:  '#fff4ec',
+          100: '#ffe2cc',
+          200: '#ffc49a',
+          300: '#ffa368',
+          400: '#ff8840',
+          500: '#FF7A1A', // logo orange
+          600: '#e06200',
+          700: '#b84e00',
+          800: '#903c00',
+          900: '#6b2d00',
+        },
+        navy: {
+          DEFAULT: '#152D50',
+          light:   '#1e3f6f',
+          dark:    '#0d1e35',
         },
       },
       fontFamily: {

@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import BrandLogo from './BrandLogo';
 
 const LoadingSpinner = ({ size = 'md', text = '' }) => {
   const sizes = {
@@ -29,7 +30,7 @@ export const PageLoader = () => (
         animate={{ scale: 1, opacity: 1 }}
         className="mb-4"
       >
-        <span className="text-4xl">🏠</span>
+        <BrandLogo size="sm" artwork />
       </motion.div>
       <LoadingSpinner size="lg" text="Loading HomeFix..." />
     </div>

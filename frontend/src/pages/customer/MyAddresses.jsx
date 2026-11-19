@@ -1,7 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { FaPlus, FaTrash, FaEdit, FaCheckCircle, FaMapMarkerAlt, FaHome, FaBriefcase, FaBookmark, FaSpinner, FaCrosshairs } from 'react-icons/fa';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  FaPlus,
+  FaTrash,
+  FaEdit,
+  FaCheckCircle,
+  FaMapMarkerAlt,
+  FaHome,
+  FaBriefcase,
+  FaBookmark,
+  FaSpinner,
+  FaCrosshairs,
+  FaSearch,
+  FaTimes,
+  FaMapMarkedAlt,
+} from 'react-icons/fa';
 import toast from 'react-hot-toast';
-import LocationModal from '../../components/common/LocationModal';
+import LeafletMap from '../../components/common/LeafletMap';
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function MyAddresses() {
   const [addresses, setAddresses] = useState([]);
@@ -23,14 +39,35 @@ export default function MyAddresses() {
     isDefault: false,
   });
 
+  // Location search and auto-detect states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+  const searchTimeoutRef = useRef(null);
+  const searchContainerRef = useRef(null);
+
   useEffect(() => {
     fetchAddresses();
+  }, []);
+
+  // Close search suggestions on click outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setSearchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const fetchAddresses = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/addresses', { credentials: 'include' });
+      const res = await fetch(`${API}/api/addresses`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setAddresses(data.addresses || []);
@@ -45,6 +82,9 @@ export default function MyAddresses() {
 
   const handleOpenAddModal = () => {
     setEditAddress(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchDropdownOpen(false);
     setFormData({
       label: 'Home',
       customLabel: '',
@@ -62,6 +102,9 @@ export default function MyAddresses() {
 
   const handleOpenEditModal = (addr) => {
     setEditAddress(addr);
+    setSearchQuery(addr.address || `${addr.city || ''}, ${addr.state || ''}`);
+    setSearchResults([]);
+    setSearchDropdownOpen(false);
     setFormData({
       label: addr.label || 'Home',
       customLabel: addr.customLabel || '',
@@ -80,7 +123,7 @@ export default function MyAddresses() {
   const handleDeleteAddress = async (id) => {
     if (!window.confirm('Are you sure you want to delete this address?')) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/addresses/${id}`, {
+      const res = await fetch(`${API}/api/addresses/${id}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -99,7 +142,7 @@ export default function MyAddresses() {
 
   const handleSetDefault = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/addresses/${id}/default`, {
+      const res = await fetch(`${API}/api/addresses/${id}/default`, {
         method: 'PUT',
         credentials: 'include',
       });
@@ -114,19 +157,154 @@ export default function MyAddresses() {
     }
   };
 
-  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  // 1. Browser Geolocation GPS Handler (Auto-detect)
+  const handleDetectGPS = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser.');
+      return;
+    }
+    setIsDetecting(true);
+    const toastId = toast.loading('Detecting your GPS location...');
 
-  const handleLocationPickedFromModal = (loc) => {
-    setFormData(prev => ({
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const res = await fetch(`${API}/api/location/reverse-geocode`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ latitude, longitude }),
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            setFormData((prev) => ({
+              ...prev,
+              latitude: Number(latitude),
+              longitude: Number(longitude),
+              address: data.formattedAddress || prev.address,
+              locality: data.locality || prev.locality,
+              city: data.city || data.locality || prev.city,
+              state: data.state || prev.state,
+              pincode: data.pincode || prev.pincode,
+            }));
+            setSearchQuery(data.formattedAddress || `${data.city}, ${data.state}`);
+            toast.success(`Location detected: ${data.city || data.locality || 'Coordinates updated'}`, { id: toastId });
+          } else {
+            setFormData((prev) => ({
+              ...prev,
+              latitude: Number(latitude),
+              longitude: Number(longitude),
+            }));
+            toast.success('GPS coordinates detected.', { id: toastId });
+          }
+        } catch (err) {
+          console.error('[Detect Location Error]', err);
+          setFormData((prev) => ({
+            ...prev,
+            latitude: Number(latitude),
+            longitude: Number(longitude),
+          }));
+          toast.success('GPS coordinates detected.', { id: toastId });
+        } finally {
+          setIsDetecting(false);
+        }
+      },
+      (error) => {
+        setIsDetecting(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          toast.error('Location permission was denied. Please allow location access or search your address.', { id: toastId });
+        } else {
+          toast.error('Could not detect device location. Please search manually.', { id: toastId });
+        }
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  };
+
+  // 2. Autosuggest search handler
+  const handleSearchChange = (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      setSearchDropdownOpen(false);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API}/api/location/search?q=${encodeURIComponent(query.trim())}`);
+        const data = await res.json();
+        if (data.success) {
+          const list = data.results || [];
+          setSearchResults(list);
+          setSearchDropdownOpen(list.length > 0);
+        }
+      } catch (err) {
+        console.error('[Location Search Error]', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 350);
+  };
+
+  // 3. Select location from autosuggest list
+  const handleSelectLocation = (item) => {
+    setFormData((prev) => ({
       ...prev,
-      address: loc.address,
-      locality: loc.locality || prev.locality,
-      city: loc.city || prev.city,
-      state: loc.state || prev.state,
-      pincode: loc.pincode || prev.pincode,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
+      latitude: Number(item.latitude),
+      longitude: Number(item.longitude),
+      address: item.formattedAddress || prev.address,
+      locality: item.locality || prev.locality,
+      city: item.city || item.locality || prev.city,
+      state: item.state || prev.state,
+      pincode: item.pincode || prev.pincode,
     }));
+    setSearchQuery(item.formattedAddress || `${item.city}, ${item.state}`);
+    setSearchResults([]);
+    setSearchDropdownOpen(false);
+    toast.success(`Selected: ${item.city || item.locality || 'Location'}`);
+  };
+
+  // 4. Map click or pin drag handler
+  const handleMapPositionChange = async (lat, lng) => {
+    setFormData((prev) => ({
+      ...prev,
+      latitude: Number(lat),
+      longitude: Number(lng),
+    }));
+
+    setIsReverseGeocoding(true);
+    try {
+      const res = await fetch(`${API}/api/location/reverse-geocode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude: lat, longitude: lng }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFormData((prev) => ({
+          ...prev,
+          address: data.formattedAddress || prev.address,
+          locality: data.locality || prev.locality,
+          city: data.city || data.locality || prev.city,
+          state: data.state || prev.state,
+          pincode: data.pincode || prev.pincode,
+        }));
+        setSearchQuery(data.formattedAddress || `${data.city}, ${data.state}`);
+        toast.success(`Location updated: ${data.city || data.locality || 'Pin placed'}`);
+      }
+    } catch (err) {
+      console.error('[Map Reverse Geocode Error]', err);
+    } finally {
+      setIsReverseGeocoding(false);
+    }
   };
 
   const handleSaveAddress = async (e) => {
@@ -135,11 +313,15 @@ export default function MyAddresses() {
       toast.error('Please select a valid address location.');
       return;
     }
+    if (!formData.city) {
+      toast.error('City is required.');
+      return;
+    }
 
     try {
       const url = editAddress
-        ? `http://localhost:5000/api/addresses/${editAddress._id}`
-        : 'http://localhost:5000/api/addresses';
+        ? `${API}/api/addresses/${editAddress._id}`
+        : `${API}/api/addresses`;
 
       const method = editAddress ? 'PUT' : 'POST';
 
@@ -173,7 +355,7 @@ export default function MyAddresses() {
             <span>📍 My Saved Addresses</span>
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Manage your service locations for quick booking & discovery
+            Manage your service delivery locations for fast booking & provider discovery
           </p>
         </div>
 
@@ -274,26 +456,30 @@ export default function MyAddresses() {
 
       {/* Add / Edit Address Form Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden">
-            <div className="px-6 py-4 bg-gradient-to-r from-primary-600 to-indigo-600 text-white flex items-center justify-between">
-              <h3 className="font-bold text-lg">{editAddress ? 'Edit Address' : 'Add New Address'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-white p-1">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full my-8 overflow-hidden border border-gray-100">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-emerald-800 to-teal-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <FaMapMarkerAlt className="text-emerald-300" />
+                <h3 className="font-bold text-lg">{editAddress ? 'Edit Address' : 'Add New Address'}</h3>
+              </div>
+              <button onClick={() => setIsModalOpen(false)} className="text-white/80 hover:text-white p-1 text-lg">✕</button>
             </div>
 
-            <form onSubmit={handleSaveAddress} className="p-6 space-y-4">
-              {/* Label Selector */}
+            <form onSubmit={handleSaveAddress} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+              {/* Address Label Selector */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Address Label</label>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Address Type</label>
                 <div className="grid grid-cols-3 gap-2">
                   {['Home', 'Work', 'Other'].map((lbl) => (
                     <button
                       key={lbl}
                       type="button"
                       onClick={() => setFormData({ ...formData, label: lbl })}
-                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                      className={`py-2.5 px-3 text-xs font-bold rounded-xl border transition-all ${
                         formData.label === lbl
-                          ? 'bg-primary-50 border-primary-500 text-primary-700'
+                          ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-sm'
                           : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                       }`}
                     >
@@ -301,88 +487,238 @@ export default function MyAddresses() {
                     </button>
                   ))}
                 </div>
+                {formData.label === 'Other' && (
+                  <input
+                    type="text"
+                    value={formData.customLabel}
+                    onChange={(e) => setFormData({ ...formData, customLabel: e.target.value })}
+                    className="input-field mt-2 text-xs"
+                    placeholder="e.g. Parents' House, Studio, Shop"
+                  />
+                )}
               </div>
 
-              {/* Location Selector trigger button */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Location & Map</label>
-                <LocationModal
-                  isOpen={isPickerOpen}
-                  onClose={() => setIsPickerOpen(false)}
-                  onSelectLocation={handleLocationPickedFromModal}
-                  initialLocation={{
-                    latitude: formData.latitude,
-                    longitude: formData.longitude,
-                    formattedAddress: formData.address,
-                  }}
-                />
+              {/* Automatic Location Section: GPS Auto-Detect & Autosuggest Search */}
+              <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/70 via-white to-slate-50 p-4 shadow-sm space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                      <FaMapMarkerAlt className="text-emerald-700" /> Auto-Detect or Search Location
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Click auto-detect or type to search. Your address and coordinates will auto-fill.
+                    </p>
+                  </div>
 
-                <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-2xl space-y-2">
-                  <p className="text-xs font-medium text-gray-800 line-clamp-2">
-                    {formData.address || 'No location selected yet.'}
-                  </p>
-                  <p className="text-[11px] text-gray-400">
-                    {[formData.locality, formData.city, formData.state, formData.pincode].filter(Boolean).join(', ')}
-                  </p>
+                  {/* Auto-detect button */}
                   <button
                     type="button"
-                    onClick={() => setIsPickerOpen(true)}
-                    className="w-full mt-2 py-2 px-3 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-bold rounded-xl border border-primary-200 flex items-center justify-center space-x-1.5 transition-colors"
+                    onClick={handleDetectGPS}
+                    disabled={isDetecting}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-800 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-900 disabled:opacity-60 transition shrink-0"
                   >
-                    <FaCrosshairs className="w-3.5 h-3.5" />
-                    <span>{formData.address ? 'Change Location on Map / GPS' : 'Select Location on Map / GPS'}</span>
+                    {isDetecting ? (
+                      <>
+                        <FaSpinner className="animate-spin text-xs" /> Detecting GPS...
+                      </>
+                    ) : (
+                      <>
+                        <FaCrosshairs className="text-xs" /> Auto-detect my location
+                      </>
+                    )}
                   </button>
                 </div>
+
+                {/* Location Autosuggest Search Bar */}
+                <div className="relative" ref={searchContainerRef}>
+                  <div className="relative flex items-center">
+                    <FaSearch className="absolute left-3.5 text-slate-400 text-xs pointer-events-none" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={handleSearchChange}
+                      onFocus={() => searchResults.length > 0 && setSearchDropdownOpen(true)}
+                      placeholder="Search area, locality, town, or address (autosuggest)..."
+                      className="input-field pl-9 pr-9 text-xs h-10 bg-white shadow-sm"
+                    />
+                    {isSearching && (
+                      <FaSpinner className="animate-spin absolute right-3.5 text-emerald-700 text-xs" />
+                    )}
+                    {!isSearching && searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setSearchResults([]);
+                          setSearchDropdownOpen(false);
+                        }}
+                        className="absolute right-3.5 text-slate-400 hover:text-slate-600 p-1"
+                      >
+                        <FaTimes className="text-xs" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Autosuggest Dropdown */}
+                  {searchDropdownOpen && searchResults.length > 0 && (
+                    <ul className="absolute z-50 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                      {searchResults.map((item, idx) => (
+                        <li
+                          key={idx}
+                          onClick={() => handleSelectLocation(item)}
+                          className="flex items-start gap-2.5 px-3.5 py-2.5 hover:bg-emerald-50/80 cursor-pointer text-left border-b border-slate-100 last:border-b-0 transition"
+                        >
+                          <FaMapMarkerAlt className="text-emerald-700 text-xs mt-1 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-semibold text-slate-900 truncate">
+                              {item.city || item.locality || item.formattedAddress?.split(',')[0]}
+                              {item.state ? <span className="text-slate-500 font-normal">, {item.state}</span> : ''}
+                            </div>
+                            <div className="text-[11px] text-slate-500 line-clamp-1">
+                              {item.formattedAddress}
+                            </div>
+                          </div>
+                          {item.pincode && (
+                            <span className="shrink-0 text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                              {item.pincode}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
 
-              {/* Form Input details */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Interactive Map */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-600 px-1">
+                  <span className="font-semibold flex items-center gap-1.5 text-slate-800">
+                    <FaMapMarkedAlt className="text-emerald-700" /> Pinpoint Exact Delivery Location
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {isReverseGeocoding ? (
+                      <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                        <FaSpinner className="animate-spin" /> Fetching address...
+                      </span>
+                    ) : (
+                      `📍 ${Number(formData.latitude || 29.3803).toFixed(4)}, ${Number(formData.longitude || 79.5126).toFixed(4)} · Drag pin or click map`
+                    )}
+                  </span>
+                </div>
+
+                <div className="relative rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+                  <LeafletMap
+                    center={[Number(formData.latitude) || 29.3803, Number(formData.longitude) || 79.5126]}
+                    markerPosition={[Number(formData.latitude) || 29.3803, Number(formData.longitude) || 79.5126]}
+                    onPositionChange={handleMapPositionChange}
+                    interactive={true}
+                    height="220px"
+                    circleColor="#047857"
+                    circleFillColor="#10b981"
+                  />
+                </div>
+              </div>
+
+              {/* Form Input Details (Auto-filled, but fully editable) */}
+              <div className="space-y-3 pt-1">
                 <div>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">City</label>
-                  <input
-                    type="text"
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
-                    placeholder="e.g. Haldwani"
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                    Street / House / Building Address <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    className="input-field text-xs resize-y"
+                    placeholder="House/Flat number, building name, street..."
+                    required
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">Pincode</label>
-                  <input
-                    type="text"
-                    value={formData.pincode}
-                    onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
-                    placeholder="e.g. 263139"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      Locality / Area
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.locality}
+                      onChange={(e) => setFormData({ ...formData, locality: e.target.value })}
+                      className="input-field text-xs"
+                      placeholder="e.g. Mallital, Civil Lines"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      City <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      className="input-field text-xs"
+                      placeholder="e.g. Haldwani, Nainital"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">State</label>
+                    <input
+                      type="text"
+                      value={formData.state}
+                      onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                      className="input-field text-xs"
+                      placeholder="e.g. Uttarakhand"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">PIN Code</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={formData.pincode}
+                      onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                      className="input-field text-xs"
+                      placeholder="e.g. 263139"
+                    />
+                  </div>
                 </div>
               </div>
 
+              {/* Set as default checkbox */}
               <div className="flex items-center space-x-2 pt-2">
                 <input
                   type="checkbox"
                   id="isDefaultCheck"
                   checked={formData.isDefault}
                   onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
-                  className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                  className="w-4 h-4 text-emerald-800 rounded border-gray-300 focus:ring-emerald-700"
                 />
-                <label htmlFor="isDefaultCheck" className="text-xs font-semibold text-gray-700">
-                  Set as default address
+                <label htmlFor="isDefaultCheck" className="text-xs font-semibold text-gray-700 cursor-pointer">
+                  Set as default address for service bookings
                 </label>
               </div>
 
+              {/* Action Buttons */}
               <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900"
+                  className="px-4 py-2.5 text-xs font-semibold text-gray-600 hover:text-gray-900 rounded-xl"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary py-2.5 px-6 text-xs shadow-md">
-                  Save Address
+                <button
+                  type="submit"
+                  className="rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold py-2.5 px-6 text-xs shadow-md transition"
+                >
+                  {editAddress ? 'Update Address' : 'Save Address'}
                 </button>
               </div>
             </form>

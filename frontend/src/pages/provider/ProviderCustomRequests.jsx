@@ -37,7 +37,7 @@ const ProviderCustomRequests = () => {
 
   const fetchRequests = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/custom-requests', {
+      const res = await fetch('http://localhost:5000/api/custom-requests?mode=provider', {
         credentials: 'include'
       });
       const data = await res.json();

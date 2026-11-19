@@ -16,9 +16,12 @@ const requireAuth = async (req, res, next) => {
   }
 
   try {
-    const user = await User.findById(decoded.id).select('role verificationStatus');
+    const user = await User.findById(decoded.id).select('role providerStatus verificationStatus accountStatus');
     if (!user) {
       return res.status(401).json({ success: false, message: 'Account no longer exists.' });
+    }
+    if (user.accountStatus === 'suspended') {
+      return res.status(403).json({ success: false, message: 'This account is suspended.' });
     }
     if (user.role === 'provider' && user.verificationStatus === 'suspended') {
       return res.status(403).json({ success: false, message: 'This provider account is suspended.' });
@@ -27,6 +30,9 @@ const requireAuth = async (req, res, next) => {
     req.user = {
       id: user._id.toString(),
       role: user.role,
+      providerStatus: user.role === 'provider'
+        ? (user.providerStatus === 'not_applied' ? user.verificationStatus : user.providerStatus)
+        : user.providerStatus,
       verificationStatus: user.verificationStatus,
       email: decoded.email,
     };
@@ -42,7 +48,16 @@ const requireRole = (role) => {
     if (!req.user) {
       return res.status(401).json({ success: false, message: 'Unauthenticated.' });
     }
-    if (req.user.role !== role) {
+    const isLegacyApprovedProvider = req.user.role === 'provider'
+      && (req.user.providerStatus === 'approved'
+        || (req.user.providerStatus === 'not_applied' && req.user.verificationStatus === 'approved'));
+    const isApprovedProvider = req.user.providerStatus === 'approved' || isLegacyApprovedProvider;
+    const authorized = role === 'provider'
+      ? isApprovedProvider
+      : role === 'customer'
+        ? req.user.role === 'customer' || isLegacyApprovedProvider
+        : req.user.role === role;
+    if (!authorized) {
       return res.status(403).json({ success: false, message: 'Forbidden: insufficient role.' });
     }
     next();

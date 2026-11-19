@@ -1,10 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FaPlus, FaArrowLeft, FaInfoCircle, FaTag, FaSearch, FaClock } from 'react-icons/fa';
 import { toast } from 'react-hot-toast';
-
-const categories = ['Cleaning', 'Plumbing', 'Electrical', 'Painting', 'Carpentry', 'Appliances', 'Pest Control', 'Home Security', 'Handyman', 'Other'];
 
 const pricingModels = [
   { id: 'fixed', label: 'Fixed Price', icon: <FaTag />, color: 'from-emerald-500 to-emerald-600',
@@ -17,6 +15,7 @@ const pricingModels = [
 
 const AddService = () => {
   const navigate = useNavigate();
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '', category: '', description: '', image: '',
@@ -24,6 +23,13 @@ const AddService = () => {
     fixedPrice: '', inspectionFee: '',
     visitFee: '', hourlyRate: '', billingIncrement: '60',
   });
+
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/service-categories`)
+      .then((response) => response.json())
+      .then((data) => data.success && setCategories((data.categories || []).map((category) => category.name)))
+      .catch((error) => toast.error(error.message || 'Failed to load service categories.'));
+  }, []);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });

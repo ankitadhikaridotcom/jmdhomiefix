@@ -40,11 +40,22 @@ function MapClickHandler({ onPositionChange, interactive }) {
 // Component to dynamically re-center map when props change
 function ChangeView({ center, zoom }) {
   const map = useMap();
+  const lat = center?.[0];
+  const lng = center?.[1];
+
   useEffect(() => {
-    if (center && center[0] && center[1]) {
-      map.setView(center, zoom || 13);
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [map]);
+
+  useEffect(() => {
+    if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
+      map.setView([Number(lat), Number(lng)], zoom || map.getZoom() || 13);
     }
-  }, [center, zoom, map]);
+  }, [lat, lng, zoom, map]);
+
   return null;
 }
 
@@ -57,9 +68,15 @@ export default function LeafletMap({
   interactive = true,
   height = '350px',
   useCustomRedIcon = false,
+  circleColor = '#047857',
+  circleFillColor = '#10b981',
 }) {
-  const validCenter = (center && center[0] && center[1]) ? center : [29.3803, 79.5126];
-  const activeMarkerPos = markerPosition || validCenter;
+  const validCenter = (center && center[0] !== undefined && center[1] !== undefined && !isNaN(Number(center[0])) && !isNaN(Number(center[1])))
+    ? [Number(center[0]), Number(center[1])]
+    : [29.3803, 79.5126];
+  const activeMarkerPos = (markerPosition && markerPosition[0] !== undefined && markerPosition[1] !== undefined && !isNaN(Number(markerPosition[0])) && !isNaN(Number(markerPosition[1])))
+    ? [Number(markerPosition[0]), Number(markerPosition[1])]
+    : validCenter;
 
   const handleDragEnd = (event) => {
     if (!interactive || !onPositionChange) return;
@@ -97,10 +114,10 @@ export default function LeafletMap({
         {radius && activeMarkerPos && activeMarkerPos[0] && (
           <Circle
             center={activeMarkerPos}
-            radius={radius * 1000} // radius in meters
+            radius={Number(radius) * 1000} // radius in meters
             pathOptions={{
-              color: '#3b82f6',
-              fillColor: '#3b82f6',
+              color: circleColor,
+              fillColor: circleFillColor,
               fillOpacity: 0.15,
               weight: 2,
             }}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- House body -->
+  <rect x="8" y="22" width="32" height="20" rx="3" fill="#152D50"/>
+  <!-- Roof -->
+  <polygon points="24,4 46,24 2,24" fill="#20A5C2"/>
+  <!-- Door -->
+  <rect x="19" y="30" width="10" height="12" rx="2" fill="#FF7A1A"/>
+  <!-- Wrench accent -->
+  <circle cx="36" cy="14" r="5" fill="#FF7A1A" opacity="0.9"/>
+  <rect x="34.5" y="8" width="3" height="12" rx="1.5" fill="white" opacity="0.8"/>
+</svg>

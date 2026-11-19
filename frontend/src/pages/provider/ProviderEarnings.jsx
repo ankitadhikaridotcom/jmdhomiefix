@@ -54,8 +54,8 @@ const ProviderEarnings = () => {
     );
   }
 
-  const chartData = chartView === 'weekly' ? data.weekly : data.monthly;
-  const maxVal = Math.max(...chartData.map(d => d.earnings || d.earnings));
+  const chartData = (chartView === 'weekly' ? data.weekly : data.monthly) || [];
+  const maxVal = Math.max(1, ...chartData.map(d => d.earnings || 0));
 
   return (
     <div className="space-y-6">

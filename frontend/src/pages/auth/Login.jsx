@@ -6,6 +6,7 @@ import { FaEnvelope, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import BrandLogo from '../../components/common/BrandLogo';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -17,24 +18,15 @@ const Login = () => {
 
   // If already authenticated, redirect
   if (isAuthenticated && user) {
-    const role = user.role;
-    if (role === 'admin') { navigate('/admin', { replace: true }); return null; }
-    if (role === 'provider') { navigate('/provider', { replace: true }); return null; }
     navigate('/', { replace: true }); return null;
   }
-
-  const redirectByRole = (role) => {
-    if (role === 'admin') navigate('/admin', { replace: true });
-    else if (role === 'provider') navigate('/provider', { replace: true });
-    else navigate('/', { replace: true });
-  };
 
   const onSubmit = async (data) => {
     setIsLoading(true);
     try {
-      const result = await login({ email: data.email, password: data.password });
+      await login({ email: data.email, password: data.password });
       toast.success('Welcome back! 🎉');
-      redirectByRole(result?.user?.role);
+      navigate('/', { replace: true });
     } catch (err) {
       toast.error(err.message || 'Invalid credentials. Please try again.');
     } finally {
@@ -54,10 +46,7 @@ const Login = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <Link to="/" className="flex items-center gap-2 mb-8">
-              <span className="text-5xl">🏠</span>
-              <span className="text-3xl font-bold">Home<span className="text-secondary-400">Fix</span></span>
-            </Link>
+            <BrandLogo size="lg" artwork className="mb-8" />
             <h1 className="text-4xl xl:text-5xl font-bold leading-tight">
               Welcome back to<br />
               <span className="text-secondary-400">HomeFix</span>
@@ -102,10 +91,7 @@ const Login = () => {
           className="w-full max-w-md"
         >
           <div className="lg:hidden text-center mb-8">
-            <Link to="/" className="inline-flex items-center gap-2">
-              <span className="text-3xl">🏠</span>
-              <h2 className="text-2xl font-bold text-gray-900">Home<span className="text-primary-600">Fix</span></h2>
-            </Link>
+            <BrandLogo size="md" />
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">

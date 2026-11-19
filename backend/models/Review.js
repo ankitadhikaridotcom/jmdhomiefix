@@ -17,5 +17,7 @@ reviewSchema.pre('save', function (next) {
 
 // Ensure one review per booking
 reviewSchema.index({ bookingId: 1 }, { unique: true });
+reviewSchema.index({ providerId: 1, createdAt: -1 });
+reviewSchema.index({ customerId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Review', reviewSchema);

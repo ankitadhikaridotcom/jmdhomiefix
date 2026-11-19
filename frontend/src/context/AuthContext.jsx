@@ -78,23 +78,23 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   };
 
-  const updateUser = async (updatedData) => {
-    try {
-      const res = await axios.put(`${API_BASE}/api/profile`, updatedData, { withCredentials: true });
-      if (res.data.success && res.data.user) {
-        setUser(res.data.user);
-        return res.data;
-      } else {
-        // Fallback local update if user payload not in response
-        setUser((prev) => ({ ...prev, ...updatedData }));
-        return res.data;
-      }
-    } catch (err) {
-      console.error('Failed to update profile on backend', err);
-      // Fallback local update
-      setUser((prev) => ({ ...prev, ...updatedData }));
-      throw err;
+  const refreshUser = async () => {
+    const res = await axios.get(`${API_BASE}/api/auth/me`, { withCredentials: true });
+    if (!res.data.success || !res.data.user) {
+      throw new Error('Failed to refresh account details.');
     }
+    setUser(res.data.user);
+    setIsAuthenticated(true);
+    return res.data.user;
+  };
+
+  const updateUser = async (updatedData) => {
+    const res = await axios.put(`${API_BASE}/api/profile`, updatedData, { withCredentials: true });
+    if (!res.data.success || !res.data.user) {
+      throw new Error(res.data.message || 'Failed to update profile.');
+    }
+    setUser(res.data.user);
+    return res.data;
   };
 
   const updateProviderSettings = async (settings) => {
@@ -118,6 +118,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    refreshUser,
     updateUser,
     updateProviderSettings,
   };

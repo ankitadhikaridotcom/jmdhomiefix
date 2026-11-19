@@ -7,7 +7,12 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
   const { isAuthenticated, loading, user } = useAuth();
   if (loading) return null; // Could render a loader
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (allowedRoles && (!user?.role || !allowedRoles.includes(user.role))) {
+  const hasProviderAccess = user?.providerStatus === 'approved'
+    || (user?.role === 'provider' && user?.verificationStatus === 'approved');
+  const isAllowed = !allowedRoles || allowedRoles.some((role) => (
+    role === 'provider' ? hasProviderAccess : user?.role === role
+  ));
+  if (!isAllowed) {
     return <Navigate to="/" replace />;
   }
   return children || <Outlet />;

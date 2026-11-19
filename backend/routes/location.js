@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const Service = require('../models/Service');
+const ServiceCategory = require('../models/ServiceCategory');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 // In-memory cache for Nominatim requests to strictly respect usage policies
@@ -42,10 +43,10 @@ async function reverseGeocode(lat, lon) {
   const addr = data.address || {};
 
   const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || addr.subdistrict || '';
-  const city = addr.city || addr.town || addr.municipality || addr.county || addr.district || '';
+  const city = addr.city || addr.town || addr.village || addr.municipality || addr.subdistrict || addr.county || addr.district || addr.state_district || '';
   const state = addr.state || '';
   const country = addr.country || 'India';
-  const pincode = addr.postcode || '';
+  const pincode = (addr.postcode || '').replace(/\s+/g, '').slice(0, 6);
   const formattedAddress = data.display_name || `${locality}, ${city}, ${state}`.replace(/^,\s*/, '');
 
   const result = {
@@ -117,13 +118,18 @@ router.get('/search', async (req, res) => {
     const data = await response.json();
     const results = data.map(item => {
       const addr = item.address || {};
+      const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || addr.subdistrict || '';
+      const city = addr.city || addr.town || addr.village || addr.municipality || addr.subdistrict || addr.county || addr.district || addr.state_district || '';
+      const state = addr.state || '';
+      const country = addr.country || 'India';
+      const pincode = (addr.postcode || '').replace(/\s+/g, '').slice(0, 6);
       return {
         formattedAddress: item.display_name,
-        locality: addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || '',
-        city: addr.city || addr.town || addr.municipality || addr.county || addr.district || '',
-        state: addr.state || '',
-        country: addr.country || 'India',
-        pincode: addr.postcode || '',
+        locality,
+        city,
+        state,
+        country,
+        pincode,
         latitude: Number(item.lat),
         longitude: Number(item.lon),
       };
@@ -222,8 +228,10 @@ router.get('/nearby', async (req, res) => {
               spherical: true,
               maxDistance: maxKm * 1000,
               query: {
-                role: 'provider',
-                verificationStatus: 'approved',
+                $or: [
+                  { providerStatus: 'approved' },
+                  { role: 'provider', providerStatus: 'not_applied', verificationStatus: 'approved' },
+                ],
                 'location.coordinates': { $ne: [0, 0] },
               },
             },
@@ -254,22 +262,91 @@ router.get('/nearby', async (req, res) => {
       }
       serviceQuery._id = serviceId;
     }
-    if (category) {
-      serviceQuery.category = new RegExp(`^${escapeRegex(category)}$`, 'i');
+    const CATEGORY_ALIASES = {
+      plumbing: 'Plumber',
+      plumber: 'Plumber',
+      electrical: 'Electrician',
+      electrician: 'Electrician',
+      electric: 'Electrician',
+      cleaning: 'Home Cleaning',
+      clean: 'Home Cleaning',
+      'home cleaning': 'Home Cleaning',
+      house: 'Home Cleaning',
+      carpentry: 'Carpenter',
+      carpenter: 'Carpenter',
+      appliances: 'Appliance Repair',
+      appliance: 'Appliance Repair',
+      'appliance repair': 'Appliance Repair',
+      painting: 'Painting',
+      paint: 'Painting',
+      painter: 'Painting',
+      'pest control': 'Pest Control',
+      pest: 'Pest Control',
+      'salon at home': 'Salon at Home',
+      salon: 'Salon at Home',
+      'ac repair': 'AC Repair',
+      ac: 'AC Repair',
+    };
+
+    if (category && category.trim()) {
+      const catTrim = category.trim().toLowerCase();
+      const mappedName = CATEGORY_ALIASES[catTrim] || category.trim();
+      serviceQuery.category = new RegExp(`^(${escapeRegex(mappedName)}|${escapeRegex(category.trim())})$`, 'i');
     }
-    if (search) {
-      const q = new RegExp(escapeRegex(search), 'i');
-      serviceQuery.$or = [{ name: q }, { category: q }, { description: q }];
+
+    if (search && search.trim()) {
+      const cleanSearch = search.trim();
+      const terms = cleanSearch.toLowerCase().split(/\s+/).filter(Boolean);
+      const orClauses = [];
+
+      // Exact phrase match
+      const phraseRegex = new RegExp(escapeRegex(cleanSearch), 'i');
+      orClauses.push({ name: phraseRegex }, { category: phraseRegex }, { description: phraseRegex });
+
+      // Individual terms
+      terms.forEach((term) => {
+        const termRegex = new RegExp(escapeRegex(term), 'i');
+        orClauses.push({ name: termRegex }, { category: termRegex }, { description: termRegex });
+        if (CATEGORY_ALIASES[term]) {
+          const catName = CATEGORY_ALIASES[term];
+          orClauses.push({ category: new RegExp(`^${escapeRegex(catName)}$`, 'i') });
+        }
+      });
+
+      // Special domain keywords
+      if (/fan|switch|breaker|mcb|wire|wiring|inverter|short/i.test(cleanSearch)) {
+        orClauses.push({ category: new RegExp('^Electrician$', 'i') });
+      }
+      if (/pipe|tap|drain|leak|water|flush|basin/i.test(cleanSearch)) {
+        orClauses.push({ category: new RegExp('^Plumber$', 'i') });
+      }
+      if (/wood|furniture|door|lock|table|chair|bed/i.test(cleanSearch)) {
+        orClauses.push({ category: new RegExp('^Carpenter$', 'i') });
+      }
+      if (/wash|mop|dust|vacuum|maid|sofa|carpet/i.test(cleanSearch)) {
+        orClauses.push({ category: new RegExp('^Home Cleaning$', 'i') });
+      }
+      if (/cooling|filter|gas|compressor/i.test(cleanSearch)) {
+        orClauses.push({ category: new RegExp('^(AC Repair|Appliance Repair)$', 'i') });
+      }
+
+      serviceQuery.$or = orClauses;
     }
 
     const services = await Service.find(serviceQuery)
-      .populate('provider', 'name phone profileImage location address serviceRadius verificationStatus');
+      .populate('provider', 'name phone profileImage location address serviceRadius role providerStatus verificationStatus');
+    const activeCategories = new Set(await ServiceCategory.distinct('name', { isActive: true }));
 
     const nearbyServices = [];
     const otherServices = [];
 
     services.forEach(s => {
-      if (!s.provider || s.provider.verificationStatus !== 'approved') return;
+      if (!s.provider || !(
+        s.provider.providerStatus === 'approved'
+        || (s.provider.role === 'provider'
+          && s.provider.providerStatus === 'not_applied'
+          && s.provider.verificationStatus === 'approved')
+      ) || !activeCategories.has(s.category)) return;
       const providerIdStr = (s.provider._id || s.provider).toString();
       const providerData = providerMap.get(providerIdStr);
 
@@ -296,6 +373,8 @@ router.get('/nearby', async (req, res) => {
         },
         rating: 4.8,
         reviewCount: 12,
+        createdAt: s.createdAt || null,
+        isNew: Boolean(s.createdAt && (Date.now() - new Date(s.createdAt).getTime()) < 14 * 24 * 60 * 60 * 1000),
       };
 
       if (providerData && providerData.distanceInKm !== undefined) {

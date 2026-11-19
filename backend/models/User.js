@@ -21,10 +21,18 @@ const userSchema = new mongoose.Schema({
   googleId: { type: String, unique: true, sparse: true },
   role: {
     type: String,
-    // 'customer' = service needer, 'provider' = service provider, 'admin' = platform admin
+    // Provider access is an approval-gated capability; legacy provider values remain supported.
     enum: ['customer', 'provider', 'admin'],
     required: true,
   },
+  providerStatus: {
+    type: String,
+    enum: ['not_applied', 'draft', 'pending', 'approved', 'rejected'],
+    default: 'not_applied',
+  },
+  providerRejectionReason: { type: String, trim: true, maxlength: 1000 },
+  dateOfBirth: { type: Date },
+  accountStatus: { type: String, enum: ['active', 'suspended'], default: 'active' },
   phoneVerified: { type: Boolean, default: false },
   profileImage: { type: String },
   address: {
@@ -40,12 +48,13 @@ const userSchema = new mongoose.Schema({
     longitude: { type: Number },
   },
   location: {
-    type: { type: String, enum: ['Point'], default: 'Point' },
-    coordinates: { type: [Number], default: undefined } // [longitude, latitude]
+    type: { type: String, enum: ['Point'] },
+    coordinates: { type: [Number] } // [longitude, latitude] — omitted until user sets location
   },
   // Provider Availability
   availability: {
     workingDays: [{ type: String, enum: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }],
+    timeSlots: [{ type: String, trim: true }],
     workingHours: {
       start: { type: String, default: '09:00' },
       end: { type: String, default: '18:00' }
@@ -63,6 +72,7 @@ const userSchema = new mongoose.Schema({
   profession: { type: String },
   about: { type: String },
   skills: [{ type: String }],
+  serviceAreas: [{ type: String, trim: true }],
   experience: { type: Number, default: 0 }, // years
   city: { type: String },
   verificationStatus: {
@@ -73,7 +83,9 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-// Create a 2dsphere index for geospatial queries
-userSchema.index({ location: '2dsphere' });
+// Indexes for high-performance role lookups and geo discovery
+userSchema.index({ location: '2dsphere' }, { sparse: true });
+userSchema.index({ role: 1, providerStatus: 1, accountStatus: 1 });
+userSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('User', userSchema);

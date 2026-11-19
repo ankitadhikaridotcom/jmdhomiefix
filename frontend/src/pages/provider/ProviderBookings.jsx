@@ -31,7 +31,7 @@ const ProviderBookings = () => {
   useEffect(() => {
     const loadBookings = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/bookings', { credentials: 'include' });
+        const res = await fetch('http://localhost:5000/api/bookings?mode=provider', { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
           setBookingList(data.bookings);
@@ -59,7 +59,7 @@ const ProviderBookings = () => {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: newStatus, mode: 'provider' })
       });
       const data = await res.json();
       if (data.success) {

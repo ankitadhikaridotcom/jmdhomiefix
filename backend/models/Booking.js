@@ -131,5 +131,7 @@ bookingSchema.index(
   }
 );
 bookingSchema.index({ serviceLocation: '2dsphere' });
+bookingSchema.index({ customer: 1, createdAt: -1 });
+bookingSchema.index({ provider: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Booking', bookingSchema);
