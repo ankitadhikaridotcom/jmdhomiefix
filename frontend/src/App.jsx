@@ -189,14 +189,6 @@ const PublicLayout = () => {
   );
 };
 
-// Root redirect: unauthenticated → /login, authenticated → Home
-const RootRedirect = () => {
-  const { isAuthenticated, loading } = useAuth();
-  if (loading) return null;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <Home />;
-};
-
 // Modern 404
 const NotFound = () => (
   <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
@@ -275,7 +267,7 @@ function App() {
 
           {/* Public + Customer Routes */}
           <Route element={<PublicLayout />}>
-            <Route path="/" element={<RootRedirect />} />
+            <Route path="/" element={<Home />} />
             <Route path="/services" element={<Services />} />
             <Route path="/services/:id" element={<ServiceDetail />} />
             

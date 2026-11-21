@@ -19,7 +19,8 @@ import {
   Briefcase,
   CheckCheck,
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  Info
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import BrandLogo from './BrandLogo';
@@ -156,6 +157,14 @@ const Navbar = () => {
                 }`}
               >
                 Services
+              </Link>
+              <Link
+                to="/about"
+                className={`text-sm font-semibold transition-colors duration-150 ${
+                  location.pathname === '/about' ? 'text-[#0284C7]' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                About
               </Link>
               <Link
                 to="/help"
@@ -598,6 +607,14 @@ const Navbar = () => {
                       <Search className="w-4 h-4 text-slate-400" />
                       <span>All Services</span>
                     </Link>
+                    <Link to="/about" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
+                      <Info className="w-4 h-4 text-slate-400" />
+                      <span>About Us</span>
+                    </Link>
+                    <Link to="/help" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
+                      <HelpCircle className="w-4 h-4 text-slate-400" />
+                      <span>Help & FAQs</span>
+                    </Link>
 
                     {user?.role === 'customer' && (
                       <>
@@ -646,6 +663,14 @@ const Navbar = () => {
                     <Link to="/services" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                       <Search className="w-4 h-4 text-slate-400" />
                       <span>All Services</span>
+                    </Link>
+                    <Link to="/about" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
+                      <Info className="w-4 h-4 text-slate-400" />
+                      <span>About Us</span>
+                    </Link>
+                    <Link to="/help" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
+                      <HelpCircle className="w-4 h-4 text-slate-400" />
+                      <span>Help & FAQs</span>
                     </Link>
                     <div className="pt-4 space-y-2">
                       <Link to="/login" className="block w-full py-2.5 text-center font-bold text-sm bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition">
