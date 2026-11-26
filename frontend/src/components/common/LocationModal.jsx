@@ -1,26 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaMapMarkerAlt, FaCrosshairs, FaSearch, FaMapMarkedAlt, FaBookmark, FaTimes, FaCheck, FaSpinner } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaCrosshairs, FaSearch, FaMapMarkedAlt, FaBookmark, FaTimes, FaCheck, FaSpinner, FaExclamationTriangle } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import LeafletMap from './LeafletMap';
 import { useAuth } from '../../context/AuthContext';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+const getBrowserPosition = (options) =>
+  new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+
 export default function LocationModal({ isOpen, onClose, onSelectLocation, initialLocation }) {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('gps'); // 'gps' | 'search' | 'map' | 'saved'
   const [loading, setLoading] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError, setGpsError] = useState('');
+  const [gpsMethodNote, setGpsMethodNote] = useState('');
 
   // Address search states
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const searchTimeoutRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   // Selected location object state
   const [selectedLoc, setSelectedLoc] = useState({
     latitude: initialLocation?.latitude || user?.address?.latitude || 29.3803,
     longitude: initialLocation?.longitude || user?.address?.longitude || 79.5126,
-    address: initialLocation?.formattedAddress || user?.address?.formattedAddress || '',
+    address: initialLocation?.address || initialLocation?.formattedAddress || user?.address?.formattedAddress || '',
     locality: initialLocation?.locality || user?.address?.locality || '',
     city: initialLocation?.city || user?.address?.city || '',
     state: initialLocation?.state || user?.address?.state || '',
@@ -31,17 +41,38 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
 
+  // Sync selected location when modal opens or initialLocation/user loads
   useEffect(() => {
-    if (isOpen && user) {
+    if (!isOpen) return;
+    setGpsError('');
+    setGpsMethodNote('');
+
+    const sourceAddr = initialLocation?.address || initialLocation?.formattedAddress || user?.address?.formattedAddress || '';
+    const sourceLat = initialLocation?.latitude || user?.address?.latitude;
+    const sourceLng = initialLocation?.longitude || user?.address?.longitude;
+
+    if (sourceLat && sourceLng) {
+      setSelectedLoc({
+        latitude: sourceLat,
+        longitude: sourceLng,
+        address: sourceAddr,
+        locality: initialLocation?.locality || user?.address?.locality || '',
+        city: initialLocation?.city || user?.address?.city || '',
+        state: initialLocation?.state || user?.address?.state || '',
+        pincode: initialLocation?.pincode || user?.address?.pincode || '',
+      });
+    }
+
+    if (user) {
       fetchSavedAddresses();
     }
-  }, [isOpen, user]);
+  }, [isOpen, user, initialLocation]);
 
   const fetchSavedAddresses = async () => {
     if (!user) return;
     setLoadingSaved(true);
     try {
-      const res = await fetch('http://localhost:5000/api/addresses', { credentials: 'include' });
+      const res = await fetch(`${API_BASE}/api/addresses`, { credentials: 'include' });
       const data = await res.json();
       if (data.success) {
         setSavedAddresses(data.addresses || []);
@@ -53,59 +84,120 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
     }
   };
 
-  // 1. Browser Geolocation GPS Handler (triggered strictly on user click)
-  const handleDetectGPS = () => {
+  // Reverse geocode coordinates with safe coordinate fallback
+  const reverseGeocodeCoords = async (latitude, longitude) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/location/reverse-geocode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude, longitude }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        const newLoc = {
+          latitude,
+          longitude,
+          address: data.formattedAddress || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+          locality: data.locality || '',
+          city: data.city || '',
+          state: data.state || '',
+          country: data.country || 'India',
+          pincode: data.pincode || '',
+        };
+        setSelectedLoc(newLoc);
+        setGpsMethodNote('Exact browser location detected. Click "Confirm & Set Location" below to apply.');
+        toast.success(`Location detected: ${data.city || data.locality || 'Current Location'}`);
+        return;
+      }
+    } catch (err) {
+      console.error('[Reverse Geocode Fallback]', err);
+    }
+
+    // Even if reverse geocoding fails, preserve GPS coordinates so nearby services work
+    const fallbackLoc = {
+      latitude,
+      longitude,
+      address: `GPS Location (${Number(latitude).toFixed(4)}, ${Number(longitude).toFixed(4)})`,
+      locality: '',
+      city: '',
+      state: '',
+      country: 'India',
+      pincode: '',
+    };
+    setSelectedLoc(fallbackLoc);
+    setGpsMethodNote('GPS coordinates captured! Click "Confirm & Set Location" below to see nearby services.');
+    toast.success('GPS coordinates detected!');
+  };
+
+  // 1. Browser Geolocation GPS Handler (no inaccurate ISP/IP override)
+  const handleDetectGPS = async () => {
+    setGpsError('');
+    setGpsMethodNote('');
+
     if (!navigator.geolocation) {
+      setGpsError('Your browser does not support GPS geolocation. Please search your city/area or choose on the map.');
       toast.error('Geolocation is not supported by your browser.');
       return;
     }
 
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        try {
-          // Call backend Nominatim proxy reverse geocode
-          const res = await fetch('http://localhost:5000/api/location/reverse-geocode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ latitude, longitude }),
-          });
-          const data = await res.json();
+    try {
+      let position;
+      try {
+        // Attempt 1: High accuracy (hardware/Wi-Fi)
+        position = await getBrowserPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+      } catch (firstErr) {
+        if (firstErr.code === firstErr.PERMISSION_DENIED) {
+          throw firstErr;
+        }
+        // Attempt 2: Network / Wi-Fi / cached OS position
+        position = await getBrowserPosition({ enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 });
+      }
 
-          if (data.success) {
-            const newLoc = {
-              latitude,
-              longitude,
-              address: data.formattedAddress,
-              locality: data.locality,
-              city: data.city,
-              state: data.state,
-              country: data.country,
-              pincode: data.pincode,
-            };
-            setSelectedLoc(newLoc);
-            toast.success(`Location detected: ${data.city || data.locality || 'GPS Location'}`);
-          } else {
-            toast.error(data.message || 'Reverse geocoding failed.');
-          }
-        } catch (err) {
-          console.error(err);
-          toast.error('Failed to fetch address for GPS coordinates.');
-        } finally {
-          setGpsLoading(false);
-        }
-      },
-      (error) => {
-        setGpsLoading(false);
-        if (error.code === error.PERMISSION_DENIED) {
-          toast.error('GPS permission denied. You can search or select on the map.');
-        } else {
-          toast.error('Could not determine position. Try searching manually.');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+      const { latitude, longitude } = position.coords;
+      await reverseGeocodeCoords(latitude, longitude);
+    } catch (error) {
+      console.warn('[Geolocation Error]', error?.code, error?.message);
+      if (error?.code === 1) {
+        setGpsError(
+          'Location permission is blocked in your browser or Windows Settings. Allow Location in your browser address bar (and check Windows Settings → Privacy & security → Location), or select your city manually below.'
+        );
+        toast.error('Location permission denied.');
+      } else if (error?.code === 3) {
+        setGpsError(
+          'GPS detection timed out on this device. Check Windows Location Services, or quickly pick your exact city/area via Search or Map below.'
+        );
+        toast.error('GPS detection timed out.');
+      } else {
+        setGpsError(
+          'Device GPS / Wi-Fi location is unavailable on this browser (common on desktops without GPS or when Windows Location Services is off). Please select your exact city/area via Search or Map below.'
+        );
+        toast.error('Device GPS unavailable. Please search your city or pick on map.');
+      }
+    } finally {
+      setGpsLoading(false);
+    }
+  };
+
+  const runLocationSearch = async (query) => {
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/location/search?q=${encodeURIComponent(query.trim())}`);
+      const data = await res.json();
+      if (data.success) {
+        setSearchResults(data.results || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSearching(false);
+    }
   };
 
   // 2. Debounced Search Handler
@@ -115,26 +207,16 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
 
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
-    if (query.trim().length < 3) {
+    if (query.trim().length < 2) {
       setSearchResults([]);
       setSearching(false);
       return;
     }
 
     setSearching(true);
-    searchTimeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`http://localhost:5000/api/location/search?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        if (data.success) {
-          setSearchResults(data.results || []);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setSearching(false);
-      }
-    }, 600); // 600ms debounce
+    searchTimeoutRef.current = setTimeout(() => {
+      runLocationSearch(query);
+    }, 450);
   };
 
   const handleSelectSearchResult = (result) => {
@@ -154,8 +236,15 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
 
   // 3. Map Click Handler
   const handleMapPositionChange = async (lat, lng) => {
+    setSelectedLoc((prev) => ({
+      ...prev,
+      latitude: lat,
+      longitude: lng,
+      address: prev.address || `Pin (${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)})`,
+    }));
+
     try {
-      const res = await fetch('http://localhost:5000/api/location/reverse-geocode', {
+      const res = await fetch(`${API_BASE}/api/location/reverse-geocode`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ latitude: lat, longitude: lng }),
@@ -178,35 +267,45 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
     }
   };
 
-  // 4. Confirm Location & Persist to User DB
-  const handleConfirmLocation = async () => {
-    if (!selectedLoc.latitude || !selectedLoc.longitude) {
+  // 4. Confirm Location & Persist to User DB + localStorage
+  const handleConfirmLocation = async (locOverride = null) => {
+    const locToSave = locOverride || selectedLoc;
+    if (!locToSave.latitude || !locToSave.longitude) {
       toast.error('Please select a valid location.');
       return;
     }
 
     setLoading(true);
     try {
+      try {
+        localStorage.setItem('nivestry_user_location', JSON.stringify(locToSave));
+      } catch {
+        // ignore storage errors
+      }
+
       // If user logged in, persist location to user profile
       if (user) {
-        await fetch('http://localhost:5000/api/location/current', {
+        const res = await fetch(`${API_BASE}/api/location/current`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            latitude: selectedLoc.latitude,
-            longitude: selectedLoc.longitude,
-            formattedAddress: selectedLoc.address,
-            locality: selectedLoc.locality,
-            city: selectedLoc.city,
-            state: selectedLoc.state,
-            pincode: selectedLoc.pincode,
+            latitude: locToSave.latitude,
+            longitude: locToSave.longitude,
+            formattedAddress: locToSave.address,
+            locality: locToSave.locality,
+            city: locToSave.city,
+            state: locToSave.state,
+            pincode: locToSave.pincode,
           }),
         });
+        if (res.ok && refreshUser) {
+          await refreshUser().catch(() => {});
+        }
       }
 
       if (onSelectLocation) {
-        onSelectLocation(selectedLoc);
+        onSelectLocation(locToSave);
       }
 
       toast.success('Location updated!');
@@ -222,35 +321,37 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1a1a18]/60 backdrop-blur-sm p-4 animate-fade-in">
+      <div className="bg-[#f7f5f0] border border-[#dedad0] rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-primary-600 to-indigo-600 text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-[#1a1a18] text-[#f7f5f0] flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-white/20 rounded-xl">
-              <FaMapMarkerAlt className="w-5 h-5 text-white" />
+            <div className="p-2.5 bg-[#b3261e]/20 text-[#b3261e] rounded-xl">
+              <FaMapMarkerAlt className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-lg font-bold">Select Location</h3>
-              <p className="text-xs text-primary-100">Find nearby service providers in your area</p>
+              <p className="text-xs text-[#ebe8df]/70">Find nearby service providers in your area</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-white/20 text-white transition-colors"
+            className="p-2 rounded-full hover:bg-white/10 text-[#f7f5f0] transition-colors"
           >
             <FaTimes className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-gray-100 bg-gray-50/80 px-4 pt-2">
+        <div className="flex border-b border-[#dedad0] bg-[#ebe8df] px-4 pt-2">
           <button
+            type="button"
             onClick={() => setActiveTab('gps')}
             className={`flex-1 py-3 px-3 text-xs font-semibold rounded-t-xl flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'gps'
-                ? 'bg-white text-primary-600 border-t-2 border-primary-600 shadow-sm'
-                : 'text-gray-500 hover:text-gray-800'
+                ? 'bg-[#f7f5f0] text-[#b3261e] border-t-2 border-[#b3261e] shadow-sm'
+                : 'text-[#6a675f] hover:text-[#1a1a18]'
             }`}
           >
             <FaCrosshairs className="w-3.5 h-3.5" />
@@ -258,11 +359,12 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('search')}
             className={`flex-1 py-3 px-3 text-xs font-semibold rounded-t-xl flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'search'
-                ? 'bg-white text-primary-600 border-t-2 border-primary-600 shadow-sm'
-                : 'text-gray-500 hover:text-gray-800'
+                ? 'bg-[#f7f5f0] text-[#b3261e] border-t-2 border-[#b3261e] shadow-sm'
+                : 'text-[#6a675f] hover:text-[#1a1a18]'
             }`}
           >
             <FaSearch className="w-3.5 h-3.5" />
@@ -270,11 +372,12 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('map')}
             className={`flex-1 py-3 px-3 text-xs font-semibold rounded-t-xl flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'map'
-                ? 'bg-white text-primary-600 border-t-2 border-primary-600 shadow-sm'
-                : 'text-gray-500 hover:text-gray-800'
+                ? 'bg-[#f7f5f0] text-[#b3261e] border-t-2 border-[#b3261e] shadow-sm'
+                : 'text-[#6a675f] hover:text-[#1a1a18]'
             }`}
           >
             <FaMapMarkedAlt className="w-3.5 h-3.5" />
@@ -283,11 +386,12 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
 
           {user && (
             <button
+              type="button"
               onClick={() => setActiveTab('saved')}
               className={`flex-1 py-3 px-3 text-xs font-semibold rounded-t-xl flex items-center justify-center space-x-2 transition-all ${
                 activeTab === 'saved'
-                  ? 'bg-white text-primary-600 border-t-2 border-primary-600 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
+                  ? 'bg-[#f7f5f0] text-[#b3261e] border-t-2 border-[#b3261e] shadow-sm'
+                  : 'text-[#6a675f] hover:text-[#1a1a18]'
               }`}
             >
               <FaBookmark className="w-3.5 h-3.5" />
@@ -300,26 +404,27 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
         <div className="p-6 overflow-y-auto flex-1 space-y-4">
           {/* TAB 1: GPS */}
           {activeTab === 'gps' && (
-            <div className="text-center py-6 space-y-4">
-              <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mx-auto text-primary-600 text-2xl">
+            <div className="text-center py-4 space-y-4">
+              <div className="w-16 h-16 bg-[#ebe8df] rounded-full flex items-center justify-center mx-auto text-[#b3261e] text-2xl border border-[#dedad0]">
                 <FaCrosshairs className={gpsLoading ? 'animate-spin' : ''} />
               </div>
               <div className="space-y-1 max-w-sm mx-auto">
-                <h4 className="font-bold text-gray-900 text-base">Detect Current Location</h4>
-                <p className="text-xs text-gray-500">
-                  Click the button below to allow browser GPS location access.
+                <h4 className="font-bold text-[#1a1a18] text-base">Detect Current Location</h4>
+                <p className="text-xs text-[#6a675f]">
+                  Click the button below to detect your location via GPS or network.
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={handleDetectGPS}
                 disabled={gpsLoading}
-                className="btn-primary py-3 px-6 text-sm flex items-center justify-center space-x-2 mx-auto shadow-lg shadow-primary-500/25"
+                className="rounded-xl bg-[#b3261e] hover:bg-[#9c2019] disabled:opacity-60 text-white font-semibold py-3 px-6 text-sm flex items-center justify-center space-x-2 mx-auto shadow-md transition"
               >
                 {gpsLoading ? (
                   <>
                     <FaSpinner className="animate-spin w-4 h-4" />
-                    <span>Detecting GPS...</span>
+                    <span>Detecting Location...</span>
                   </>
                 ) : (
                   <>
@@ -328,6 +433,40 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
                   </>
                 )}
               </button>
+
+              {gpsMethodNote && (
+                <p className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2 max-w-md mx-auto">
+                  {gpsMethodNote}
+                </p>
+              )}
+
+              {gpsError && (
+                <div className="text-left bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3 max-w-md mx-auto">
+                  <div className="flex items-start gap-2 text-xs text-amber-900 leading-relaxed">
+                    <FaExclamationTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>{gpsError}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('search');
+                        setTimeout(() => searchInputRef.current?.focus(), 50);
+                      }}
+                      className="px-3.5 py-2 rounded-lg bg-[#b3261e] hover:bg-[#9c2019] text-white text-xs font-semibold transition"
+                    >
+                      Search City / Area
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('map')}
+                      className="px-3.5 py-2 rounded-lg bg-white border border-[#dedad0] text-[#1a1a18] text-xs font-semibold hover:bg-[#ebe8df] transition"
+                    >
+                      Choose on Map
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -335,16 +474,24 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
           {activeTab === 'search' && (
             <div className="space-y-3">
               <div className="relative">
-                <FaSearch className="absolute left-3.5 top-3.5 text-gray-400 w-4 h-4" />
+                <FaSearch className="absolute left-3.5 top-3.5 text-[#6a675f] w-4 h-4" />
                 <input
+                  ref={searchInputRef}
                   type="text"
-                  placeholder="Type city, area or street name (e.g. Haldwani)"
+                  placeholder="Type city, area or PIN code (e.g. Haldwani, Dehradun, Nainital)"
                   value={searchQuery}
                   onChange={handleSearchInputChange}
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+                      runLocationSearch(searchQuery);
+                    }
+                  }}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#dedad0] rounded-xl text-sm text-[#1a1a18] placeholder:text-[#6a675f] focus:outline-none focus:ring-2 focus:ring-[#b3261e]/40 focus:border-[#b3261e]"
                 />
                 {searching && (
-                  <FaSpinner className="animate-spin absolute right-3.5 top-3.5 text-primary-600 w-4 h-4" />
+                  <FaSpinner className="animate-spin absolute right-3.5 top-3.5 text-[#b3261e] w-4 h-4" />
                 )}
               </div>
 
@@ -354,19 +501,19 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
                   <div
                     key={idx}
                     onClick={() => handleSelectSearchResult(item)}
-                    className="p-3 bg-gray-50 hover:bg-primary-50 border border-gray-100 hover:border-primary-200 rounded-xl cursor-pointer transition-colors flex items-start space-x-3 group"
+                    className="p-3 bg-white hover:bg-[#ebe8df] border border-[#dedad0] hover:border-[#b3261e]/40 rounded-xl cursor-pointer transition-colors flex items-start space-x-3 group"
                   >
-                    <FaMapMarkerAlt className="w-4 h-4 text-gray-400 group-hover:text-primary-600 mt-0.5 shrink-0" />
+                    <FaMapMarkerAlt className="w-4 h-4 text-[#6a675f] group-hover:text-[#b3261e] mt-0.5 shrink-0" />
                     <div>
-                      <p className="text-xs font-semibold text-gray-900 line-clamp-1">{item.formattedAddress}</p>
-                      <p className="text-[11px] text-gray-500">
+                      <p className="text-xs font-semibold text-[#1a1a18] line-clamp-1">{item.formattedAddress}</p>
+                      <p className="text-[11px] text-[#6a675f]">
                         {[item.locality, item.city, item.state, item.pincode].filter(Boolean).join(', ')}
                       </p>
                     </div>
                   </div>
                 ))}
-                {searchQuery.length >= 3 && !searching && searchResults.length === 0 && (
-                  <p className="text-center text-xs text-gray-400 py-4">No matching locations found.</p>
+                {searchQuery.trim().length >= 2 && !searching && searchResults.length === 0 && (
+                  <p className="text-center text-xs text-[#6a675f] py-4">No matching locations found.</p>
                 )}
               </div>
             </div>
@@ -375,7 +522,7 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
           {/* TAB 3: LEAFLET MAP */}
           {activeTab === 'map' && (
             <div className="space-y-2">
-              <p className="text-xs text-gray-500">Click or drag the pin on the map to select exact location:</p>
+              <p className="text-xs text-[#6a675f]">Click or drag the pin on the map to select exact location:</p>
               <LeafletMap
                 center={[selectedLoc.latitude, selectedLoc.longitude]}
                 zoom={14}
@@ -383,6 +530,8 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
                 onPositionChange={handleMapPositionChange}
                 interactive={true}
                 height="240px"
+                circleColor="#b3261e"
+                circleFillColor="#b3261e"
               />
             </div>
           )}
@@ -392,10 +541,10 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
             <div className="space-y-2">
               {loadingSaved ? (
                 <div className="text-center py-6">
-                  <FaSpinner className="animate-spin w-6 h-6 text-primary-600 mx-auto" />
+                  <FaSpinner className="animate-spin w-6 h-6 text-[#b3261e] mx-auto" />
                 </div>
               ) : savedAddresses.length === 0 ? (
-                <p className="text-center text-xs text-gray-400 py-6">No saved addresses yet.</p>
+                <p className="text-center text-xs text-[#6a675f] py-6">No saved addresses yet.</p>
               ) : (
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {savedAddresses.map((addr) => (
@@ -413,19 +562,19 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
                         });
                         toast.success(`Selected saved address: ${addr.label}`);
                       }}
-                      className="p-3 bg-gray-50 hover:bg-primary-50 border border-gray-200 hover:border-primary-300 rounded-xl cursor-pointer transition-all flex items-center justify-between"
+                      className="p-3 bg-white hover:bg-[#ebe8df] border border-[#dedad0] hover:border-[#b3261e]/40 rounded-xl cursor-pointer transition-all flex items-center justify-between"
                     >
                       <div className="flex items-center space-x-3">
-                        <span className="p-2 bg-white rounded-lg shadow-sm text-primary-600 font-bold text-xs">
+                        <span className="p-2 bg-[#ebe8df] rounded-lg text-[#b3261e] font-bold text-xs">
                           {addr.label === 'Home' ? '🏠' : addr.label === 'Work' ? '🏢' : '📍'}
                         </span>
                         <div>
-                          <p className="text-xs font-bold text-gray-900">{addr.label}</p>
-                          <p className="text-[11px] text-gray-500 line-clamp-1">{addr.address}</p>
+                          <p className="text-xs font-bold text-[#1a1a18]">{addr.label}</p>
+                          <p className="text-[11px] text-[#6a675f] line-clamp-1">{addr.address}</p>
                         </div>
                       </div>
                       {addr.isDefault && (
-                        <span className="px-2 py-0.5 bg-primary-100 text-primary-700 text-[10px] font-bold rounded-full">
+                        <span className="px-2 py-0.5 bg-[#b3261e]/10 text-[#b3261e] text-[10px] font-bold rounded-full">
                           Default
                         </span>
                       )}
@@ -438,14 +587,14 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
 
           {/* Selected Location Card */}
           {selectedLoc.address && (
-            <div className="p-3.5 bg-primary-50/60 border border-primary-100 rounded-2xl flex items-start space-x-3">
-              <div className="p-2 bg-primary-600 text-white rounded-xl shrink-0 mt-0.5">
+            <div className="p-3.5 bg-[#ebe8df] border border-[#dedad0] rounded-2xl flex items-start space-x-3">
+              <div className="p-2 bg-[#b3261e] text-white rounded-xl shrink-0 mt-0.5">
                 <FaMapMarkerAlt className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
-                <span className="text-[10px] font-bold tracking-wider uppercase text-primary-600">Selected Location</span>
-                <p className="text-xs font-bold text-gray-900 truncate">{selectedLoc.address}</p>
-                <p className="text-[11px] text-gray-500">
+                <span className="text-[10px] font-bold tracking-wider uppercase text-[#b3261e]">Selected Location</span>
+                <p className="text-xs font-bold text-[#1a1a18] truncate">{selectedLoc.address}</p>
+                <p className="text-[11px] text-[#6a675f]">
                   {[selectedLoc.locality, selectedLoc.city, selectedLoc.state, selectedLoc.pincode].filter(Boolean).join(', ')}
                 </p>
               </div>
@@ -454,17 +603,19 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end space-x-3">
+        <div className="px-6 py-4 bg-[#ebe8df] border-t border-[#dedad0] flex items-center justify-end space-x-3">
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900"
+            className="px-4 py-2 text-xs font-semibold text-[#6a675f] hover:text-[#1a1a18]"
           >
             Cancel
           </button>
           <button
-            onClick={handleConfirmLocation}
-            disabled={loading || !selectedLoc.latitude}
-            className="btn-primary py-2.5 px-6 text-xs flex items-center space-x-2 shadow-md"
+            type="button"
+            onClick={() => handleConfirmLocation()}
+            disabled={loading || !selectedLoc.latitude || !selectedLoc.address}
+            className="rounded-xl bg-[#b3261e] hover:bg-[#9c2019] disabled:opacity-50 text-white font-semibold py-2.5 px-6 text-xs flex items-center space-x-2 shadow-md transition"
           >
             {loading ? (
               <>

@@ -179,7 +179,7 @@ const AdminLayout = () => {
 // Public Layout
 const PublicLayout = () => {
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-[#f7f5f0] text-[#1a1a18]">
       <Navbar />
       <main className="flex-1">
         <Outlet />

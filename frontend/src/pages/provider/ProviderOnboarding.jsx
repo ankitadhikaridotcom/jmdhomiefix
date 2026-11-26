@@ -585,7 +585,7 @@ const ProviderOnboarding = () => {
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <Link to="/profile" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-900"><FaArrowLeft /> Back to profile</Link>
       <div className="mt-5">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Grow with HomeFix</p>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Grow with Nivestry</p>
         <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Become a service provider</h1>
         <p className="mt-3 max-w-2xl text-slate-600">Tell us about your experience and the services you offer. You can save a draft and return whenever you’re ready.</p>
       </div>
@@ -611,7 +611,7 @@ const ProviderOnboarding = () => {
               <>
                 {field('Full name', 'fullName', { placeholder: 'Your legal full name' })}
                 {field('Phone number', 'phone', { type: 'tel', placeholder: '10-digit mobile number' })}
-                {field('Email', 'email', { type: 'email', disabled: true, hint: 'Linked to your HomeFix account' })}
+                {field('Email', 'email', { type: 'email', disabled: true, hint: 'Linked to your Nivestry account' })}
                 {uploadControl('Profile photo', 'profilePhoto', 'image')}
                 {field('Date of birth', 'dateOfBirth', { type: 'date', max: new Date().toISOString().split('T')[0] })}
               </>

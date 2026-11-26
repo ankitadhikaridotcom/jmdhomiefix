@@ -32,7 +32,7 @@ export const PageLoader = () => (
       >
         <BrandLogo size="sm" artwork />
       </motion.div>
-      <LoadingSpinner size="lg" text="Loading HomeFix..." />
+      <LoadingSpinner size="lg" text="Loading Nivestry..." />
     </div>
   </div>
 );

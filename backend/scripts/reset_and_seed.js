@@ -1,10 +1,10 @@
 /**
- * HomeFix Database Reset & Canonical Seeding Script
+ * Nivestry Database Reset & Canonical Seeding Script
  * 
  * Clears old test users, test bookings, test reviews, test notifications,
  * and recreates a fresh, production-ready environment with:
- *  - 1 Clean Admin (admin@homiefix.com / admin123)
- *  - 1 Verified Official Service Partner (provider@homiefix.com / provider123)
+ *  - 1 Clean Admin (admin@nivestry.com / admin123)
+ *  - 1 Verified Official Service Partner (provider@nivestry.com / provider123)
  *  - 16 High-Quality Services across all 9 official categories
  *  - 9 Clean Official Service Categories
  */
@@ -47,7 +47,7 @@ const canonicalServices = [
     pricingType: 'fixed',
     fixedPrice: 1499,
     basePrice: 1499,
-    image: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&auto=format&fit=crop',
+    image: '/deep-home-cleaning.jpg',
     rating: 4.9,
     reviewCount: 38,
   },
@@ -288,8 +288,8 @@ async function run() {
   // 4. Create Pristine Admin Account
   const adminPasswordHash = await bcrypt.hash('admin123', 10);
   const admin = await User.create({
-    name: 'HomieFix Admin',
-    email: 'admin@homiefix.com',
+    name: 'Nivestry Admin',
+    email: 'admin@nivestry.com',
     phone: '+919876543210',
     password: adminPasswordHash,
     role: 'admin',
@@ -314,8 +314,8 @@ async function run() {
   // 5. Create Pristine Official Verified Provider
   const providerPasswordHash = await bcrypt.hash('provider123', 10);
   const provider = await User.create({
-    name: 'HomeFix Verified Pro',
-    email: 'provider@homiefix.com',
+    name: 'Nivestry Verified Pro',
+    email: 'provider@nivestry.com',
     phone: '+919876543211',
     password: providerPasswordHash,
     role: 'provider',
@@ -327,7 +327,7 @@ async function run() {
     serviceRadius: 50,
     experience: 8,
     profession: 'Multi-Service Home Expert',
-    about: 'Certified HomeFix Partner providing premium home repair, electrical, plumbing, cleaning and AC maintenance with guaranteed warranty.',
+    about: 'Certified Nivestry Partner providing premium home repair, electrical, plumbing, cleaning and AC maintenance with guaranteed warranty.',
     address: {
       formattedAddress: 'Connaught Place, New Delhi, Delhi 110001',
       city: 'New Delhi',
@@ -382,8 +382,8 @@ async function run() {
   console.log('========================================================');
   console.log('DATABASE RESET & INITIAL SEEDING COMPLETE! 🎉');
   console.log('All 55 old test users have been purged.');
-  console.log('New Admin:    admin@homiefix.com    / admin123');
-  console.log('New Provider: provider@homiefix.com / provider123');
+  console.log('New Admin:    admin@nivestry.com    / admin123');
+  console.log('New Provider: provider@nivestry.com / provider123');
   console.log(`Active Services: ${insertedServices.length}`);
   console.log('New users can now register freshly via /register.');
   console.log('========================================================');

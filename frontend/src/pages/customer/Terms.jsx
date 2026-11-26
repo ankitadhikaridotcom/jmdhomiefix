@@ -4,11 +4,11 @@ const Terms = () => {
   const sections = [
     {
       title: '1. Acceptance of Terms',
-      content: 'By accessing or using the HomeFix platform, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services. These terms apply to all users of the platform, including customers, service providers, and visitors.'
+      content: 'By accessing or using the Nivestry platform, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services. These terms apply to all users of the platform, including customers, service providers, and visitors.'
     },
     {
       title: '2. Description of Services',
-      content: 'HomeFix provides an online marketplace that connects customers seeking home services with independent service providers. We do not directly provide any home repair, maintenance, or cleaning services. Service providers are independent contractors and not employees of HomeFix.'
+      content: 'Nivestry provides an online marketplace that connects customers seeking home services with independent service providers. We do not directly provide any home repair, maintenance, or cleaning services. Service providers are independent contractors and not employees of Nivestry.'
     },
     {
       title: '3. User Accounts',
@@ -16,7 +16,7 @@ const Terms = () => {
     },
     {
       title: '4. Booking & Payments',
-      content: 'When you book a service through HomeFix, you agree to pay the listed price plus any applicable fees. Payment is processed securely through our platform. Refunds are subject to our cancellation policy. Service providers set their own rates, and HomeFix charges a platform fee for facilitating the connection.'
+      content: 'When you book a service through Nivestry, you agree to pay the listed price plus any applicable fees. Payment is processed securely through our platform. Refunds are subject to our cancellation policy. Service providers set their own rates, and Nivestry charges a platform fee for facilitating the connection.'
     },
     {
       title: '5. Cancellation Policy',
@@ -24,23 +24,23 @@ const Terms = () => {
     },
     {
       title: '6. Service Provider Terms',
-      content: 'Service providers on HomeFix are independent contractors. They are responsible for the quality of their work, maintaining proper licenses, and carrying appropriate insurance. HomeFix reserves the right to remove providers who fail to meet our quality standards.'
+      content: 'Service providers on Nivestry are independent contractors. They are responsible for the quality of their work, maintaining proper licenses, and carrying appropriate insurance. Nivestry reserves the right to remove providers who fail to meet our quality standards.'
     },
     {
       title: '7. Reviews & Ratings',
-      content: 'Users may leave reviews and ratings for services received. Reviews must be honest, accurate, and based on genuine experiences. HomeFix reserves the right to remove reviews that violate our community guidelines, including fake, abusive, or misleading reviews.'
+      content: 'Users may leave reviews and ratings for services received. Reviews must be honest, accurate, and based on genuine experiences. Nivestry reserves the right to remove reviews that violate our community guidelines, including fake, abusive, or misleading reviews.'
     },
     {
       title: '8. Limitation of Liability',
-      content: 'HomeFix acts as a marketplace and is not liable for the quality, safety, or legality of services provided by service providers. We are not responsible for any damages, injuries, or losses resulting from services booked through our platform. Our liability is limited to the platform fees collected.'
+      content: 'Nivestry acts as a marketplace and is not liable for the quality, safety, or legality of services provided by service providers. We are not responsible for any damages, injuries, or losses resulting from services booked through our platform. Our liability is limited to the platform fees collected.'
     },
     {
       title: '9. Privacy',
-      content: 'Your use of HomeFix is also governed by our Privacy Policy, which describes how we collect, use, and share your personal information. By using our platform, you consent to our data practices as described in the Privacy Policy.'
+      content: 'Your use of Nivestry is also governed by our Privacy Policy, which describes how we collect, use, and share your personal information. By using our platform, you consent to our data practices as described in the Privacy Policy.'
     },
     {
       title: '10. Changes to Terms',
-      content: 'HomeFix reserves the right to modify these Terms of Service at any time. Changes will be effective when posted on the platform. Your continued use of the platform after changes constitutes acceptance of the updated terms.'
+      content: 'Nivestry reserves the right to modify these Terms of Service at any time. Changes will be effective when posted on the platform. Your continued use of the platform after changes constitutes acceptance of the updated terms.'
     },
   ];
 
@@ -63,7 +63,7 @@ const Terms = () => {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
             className="card p-6 md:p-10 mb-8">
             <p className="text-gray-600 leading-relaxed">
-              Welcome to HomeFix. These Terms of Service ("Terms") govern your use of the HomeFix platform, 
+              Welcome to Nivestry. These Terms of Service ("Terms") govern your use of the Nivestry platform, 
               including our website and mobile applications. Please read these terms carefully before using our services.
             </p>
           </motion.div>
@@ -81,7 +81,7 @@ const Terms = () => {
           <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}
             className="mt-10 bg-primary-50 rounded-2xl p-8 text-center">
             <p className="text-gray-700 font-medium">Have questions about our terms?</p>
-            <p className="text-sm text-gray-500 mt-1">Contact us at <strong className="text-primary-600">legal@homefix.in</strong></p>
+            <p className="text-sm text-gray-500 mt-1">Contact us at <strong className="text-primary-600">legal@nivestry.com</strong></p>
           </motion.div>
         </div>
       </section>

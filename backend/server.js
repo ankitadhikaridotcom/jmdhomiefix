@@ -216,7 +216,7 @@ app.get('/api/providers/nearby', (req, res, next) => {
 
 // Root endpoint
 app.get('/', (req, res) => {
-  res.send('HomeFix API is running');
+  res.send('Nivestry API is running');
 });
 
 // ---------- Auth Routes ----------
@@ -2460,7 +2460,7 @@ const startServer = async () => {
   }
   await connectDB();
   return app.listen(PORT, () => {
-    console.log(`HomeFix Backend running on http://localhost:${PORT}`);
+    console.log(`Nivestry Backend running on http://localhost:${PORT}`);
   });
 };
 

@@ -64,7 +64,23 @@ const Services = () => {
         latitude: user.address.latitude,
         longitude: user.address.longitude,
         address: user.address.formattedAddress || `${user.address.city || ''}, ${user.address.state || ''}`,
+        locality: user.address.locality || '',
+        city: user.address.city || '',
+        state: user.address.state || '',
+        pincode: user.address.pincode || '',
       });
+    } else {
+      try {
+        const savedLoc = localStorage.getItem('nivestry_user_location') || localStorage.getItem('homiefix_user_location');
+        if (savedLoc) {
+          const parsed = JSON.parse(savedLoc);
+          if (parsed?.latitude && parsed?.longitude) {
+            setUserLocation(parsed);
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
     }
   }, [user]);
 

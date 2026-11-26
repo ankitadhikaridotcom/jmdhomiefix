@@ -30,15 +30,26 @@ const Register = () => {
 
   return (
     <div className="min-h-screen flex">
-      <div className="hidden lg:flex lg:w-5/12 bg-gradient-to-br from-primary-700 via-primary-600 to-primary-800 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSA2MCAwIEwgMCAwIDAgNjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjA1KSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-50" />
-        <div className="relative z-10 flex flex-col justify-center px-12 xl:px-16 text-white">
+      {/* Left — Branding with Cleaning Service Photography */}
+      <div className="hidden lg:flex lg:w-5/12 bg-[#1a1a18] relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <img
+            src="/deep-home-cleaning.jpg"
+            alt="Professional Deep Home Cleaning Service"
+            className="h-full w-full object-cover object-center opacity-85"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#1a1a18]/92 via-[#1a1a18]/72 to-[#1a1a18]/40" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#1a1a18]/65 via-transparent to-[#1a1a18]/85" />
+        </div>
+
+        <div className="relative z-10 flex flex-col justify-center px-12 xl:px-16 text-[#f7f5f0]">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
-            <BrandLogo size="lg" artwork className="mb-8" />
-            <h1 className="text-3xl xl:text-4xl font-bold leading-tight">
-              Get home services<br />without the hassle.
+            <BrandLogo size="lg" variant="inverse" subtitle="HOME SERVICES" className="mb-8" />
+            <h1 className="text-3xl xl:text-4xl font-bold leading-tight text-[#f7f5f0]">
+              Get home services<br />
+              <span className="text-[#ebe8df] underline decoration-[#b3261e] decoration-4 underline-offset-8">without the hassle.</span>
             </h1>
-            <p className="text-blue-100 mt-4 text-base leading-relaxed max-w-sm">
+            <p className="text-[#ebe8df]/90 mt-5 text-base leading-relaxed max-w-sm">
               Create an account to find trusted professionals and manage your bookings.
             </p>
             <div className="mt-10 space-y-5">
@@ -48,14 +59,13 @@ const Register = () => {
                 'All your services in one place',
               ].map((text) => (
                 <div key={text} className="flex items-center gap-3">
-                  <span className="text-lg">✓</span>
-                  <span className="text-sm text-blue-100">{text}</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#b3261e] text-xs font-bold text-white">✓</span>
+                  <span className="text-sm text-[#ebe8df]/90">{text}</span>
                 </div>
               ))}
             </div>
           </motion.div>
         </div>
-        <div className="absolute -bottom-20 -right-20 w-64 h-64 rounded-full bg-white/5" />
       </div>
 
       <div className="flex-1 flex items-center justify-center p-6 sm:p-8 bg-gray-50">

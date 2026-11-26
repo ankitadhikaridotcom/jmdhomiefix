@@ -1,4 +1,5 @@
 const express = require('express');
+const net = require('net');
 const router = express.Router();
 const User = require('../models/User');
 const Service = require('../models/Service');
@@ -20,45 +21,95 @@ const isValidCoordinate = (latitude, longitude) => (
 );
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// Helper: Nominatim Reverse Geocode
+const isPrivateOrLoopbackIp = (ip) => {
+  if (!ip) return true;
+  if (ip === '::1' || ip === '127.0.0.1' || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) {
+    return true;
+  }
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true;
+  if (ip.toLowerCase().startsWith('fe80:') || ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) {
+    return true;
+  }
+  return false;
+};
+
+// Helper: Nominatim Reverse Geocode with BigDataCloud fallback
 async function reverseGeocode(lat, lon) {
   const cacheKey = `${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`;
   if (geocodeCache.has(cacheKey)) {
     return geocodeCache.get(cacheKey);
   }
 
-  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`;
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'HomieFix/1.0 (contact@homiefix.com)',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  });
+  let result = null;
 
-  if (!response.ok) {
-    throw new Error(`Nominatim error: ${response.statusText}`);
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(6000),
+      headers: {
+        'User-Agent': 'Nivestry/1.0 (contact@nivestry.com)',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const addr = data.address || {};
+
+      const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || addr.subdistrict || '';
+      const city = addr.city || addr.town || addr.village || addr.municipality || addr.subdistrict || addr.county || addr.district || addr.state_district || '';
+      const state = addr.state || '';
+      const country = addr.country || 'India';
+      const pincode = (addr.postcode || '').replace(/\s+/g, '').slice(0, 6);
+      const formattedAddress = data.display_name || [locality, city, state, country].filter(Boolean).join(', ');
+
+      result = {
+        formattedAddress,
+        locality,
+        city,
+        state,
+        country,
+        pincode,
+        latitude: Number(lat),
+        longitude: Number(lon),
+      };
+    }
+  } catch (err) {
+    console.warn('[Nominatim Reverse Geocode Fallback]', err.message);
   }
 
-  const data = await response.json();
-  const addr = data.address || {};
+  // Fallback to BigDataCloud free reverse geocode endpoint if Nominatim fails or times out
+  if (!result) {
+    try {
+      const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&localityLanguage=en`;
+      const bdcRes = await fetch(bdcUrl, { signal: AbortSignal.timeout(6000) });
+      if (bdcRes.ok) {
+        const bdc = await bdcRes.json();
+        const locality = bdc.locality || '';
+        const city = bdc.city || bdc.locality || '';
+        const state = bdc.principalSubdivision || '';
+        const country = bdc.countryName || 'India';
+        const pincode = (bdc.postcode || '').replace(/\s+/g, '').slice(0, 6);
+        const formattedAddress = [locality !== city ? locality : '', city, state, country].filter(Boolean).join(', ');
+        result = {
+          formattedAddress: formattedAddress || `${Number(lat).toFixed(4)}, ${Number(lon).toFixed(4)}`,
+          locality,
+          city,
+          state,
+          country,
+          pincode,
+          latitude: Number(lat),
+          longitude: Number(lon),
+        };
+      }
+    } catch (bdcErr) {
+      console.warn('[BigDataCloud Reverse Geocode Fallback]', bdcErr.message);
+    }
+  }
 
-  const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || addr.subdistrict || '';
-  const city = addr.city || addr.town || addr.village || addr.municipality || addr.subdistrict || addr.county || addr.district || addr.state_district || '';
-  const state = addr.state || '';
-  const country = addr.country || 'India';
-  const pincode = (addr.postcode || '').replace(/\s+/g, '').slice(0, 6);
-  const formattedAddress = data.display_name || `${locality}, ${city}, ${state}`.replace(/^,\s*/, '');
-
-  const result = {
-    formattedAddress,
-    locality,
-    city,
-    state,
-    country,
-    pincode,
-    latitude: Number(lat),
-    longitude: Number(lon),
-  };
+  if (!result) {
+    throw new Error('All reverse geocoding providers failed.');
+  }
 
   if (geocodeCache.size >= 500) geocodeCache.clear();
   geocodeCache.set(cacheKey, result);
@@ -84,6 +135,88 @@ router.post('/reverse-geocode', async (req, res) => {
   }
 });
 
+// 1b. Approximate IP-based Location Fallback (for desktop browsers where GPS/Windows Location is unavailable)
+router.get('/ip-detect', async (req, res) => {
+  try {
+    const forwarded = req.headers['x-forwarded-for'];
+    let clientIp = typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
+      : (req.ip || req.socket?.remoteAddress || '');
+    clientIp = clientIp.replace(/^::ffff:/, '');
+
+    const hasPublicIp = Boolean(clientIp && net.isIP(clientIp) && !isPrivateOrLoopbackIp(clientIp));
+    const ipParam = hasPublicIp ? encodeURIComponent(clientIp) : '';
+
+    let detected = null;
+
+    // Primary: ipwho.is (HTTPS)
+    try {
+      const whoRes = await fetch(`https://ipwho.is/${ipParam}`, { signal: AbortSignal.timeout(6000) });
+      if (whoRes.ok) {
+        const who = await whoRes.json();
+        if (who.success && isValidCoordinate(who.latitude, who.longitude)) {
+          detected = {
+            latitude: Number(who.latitude),
+            longitude: Number(who.longitude),
+            city: who.city || '',
+            state: who.region || '',
+            country: who.country || 'India',
+            pincode: (who.postal || '').replace(/\s+/g, '').slice(0, 6),
+          };
+        }
+      }
+    } catch (whoErr) {
+      console.warn('[IP Detect ipwho.is warning]', whoErr.message);
+    }
+
+    // Secondary fallback: ip-api.com
+    if (!detected) {
+      try {
+        const ipApiRes = await fetch(
+          `http://ip-api.com/json/${ipParam}?fields=status,country,regionName,city,zip,lat,lon`,
+          { signal: AbortSignal.timeout(6000) }
+        );
+        if (ipApiRes.ok) {
+          const ipApi = await ipApiRes.json();
+          if (ipApi.status === 'success' && isValidCoordinate(ipApi.lat, ipApi.lon)) {
+            detected = {
+              latitude: Number(ipApi.lat),
+              longitude: Number(ipApi.lon),
+              city: ipApi.city || '',
+              state: ipApi.regionName || '',
+              country: ipApi.country || 'India',
+              pincode: (ipApi.zip || '').replace(/\s+/g, '').slice(0, 6),
+            };
+          }
+        }
+      } catch (ipApiErr) {
+        console.warn('[IP Detect ip-api warning]', ipApiErr.message);
+      }
+    }
+
+    if (!detected) {
+      return res.status(503).json({ success: false, message: 'Could not detect approximate location from IP.' });
+    }
+
+    const formattedAddress = [detected.city, detected.state, detected.country].filter(Boolean).join(', ');
+    return res.json({
+      success: true,
+      source: 'ip',
+      formattedAddress: formattedAddress || `${detected.latitude.toFixed(4)}, ${detected.longitude.toFixed(4)}`,
+      locality: detected.city,
+      city: detected.city,
+      state: detected.state,
+      country: detected.country,
+      pincode: detected.pincode,
+      latitude: detected.latitude,
+      longitude: detected.longitude,
+    });
+  } catch (err) {
+    console.error('[IP Detect Error]', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to detect approximate location.' });
+  }
+});
+
 // 2. Address Search Endpoint (Nominatim with debouncing support)
 router.get('/search', async (req, res) => {
   try {
@@ -105,8 +238,9 @@ router.get('/search', async (req, res) => {
 
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery)}&addressdetails=1&limit=8`;
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
       headers: {
-        'User-Agent': 'HomieFix/1.0 (contact@homiefix.com)',
+        'User-Agent': 'Nivestry/1.0 (contact@nivestry.com)',
         'Accept-Language': 'en-US,en;q=0.9',
       },
     });

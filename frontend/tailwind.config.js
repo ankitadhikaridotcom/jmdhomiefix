@@ -1,12 +1,25 @@
+import { fileURLToPath } from 'node:url';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    fileURLToPath(new URL('./index.html', import.meta.url)).replace(/\\/g, '/'),
+    fileURLToPath(new URL('./src/**/*.{js,ts,jsx,tsx}', import.meta.url)).replace(/\\/g, '/'),
   ],
   theme: {
     extend: {
       colors: {
+        // Stitch Warm Editorial Palette
+        stitch: {
+          bg: '#f7f5f0',
+          surface: '#ebe8df',
+          text: '#1a1a18',
+          accent: {
+            DEFAULT: '#b3261e',
+            hover: '#9c2019',
+          },
+          muted: '#6a675f',
+        },
         // HomeFix brand palette — matches logo colours
         primary: {
           50:  '#e8f4f8',

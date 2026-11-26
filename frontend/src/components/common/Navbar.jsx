@@ -32,6 +32,7 @@ const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -39,6 +40,20 @@ const Navbar = () => {
   const profileRef = useRef(null);
   const notifRef = useRef(null);
   const searchRef = useRef(null);
+  const moreRef = useRef(null);
+
+  const isHome = location.pathname === '/';
+  const quickCategories = [
+    'Electrician',
+    'Plumber',
+    'AC Repair',
+    'Home Cleaning',
+    'Carpenter',
+    'Appliance Repair',
+    'Painting',
+    'Pest Control',
+    'Salon at Home',
+  ];
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const providerApproved = user?.providerStatus === 'approved'
@@ -88,6 +103,7 @@ const Navbar = () => {
       if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
       if (searchRef.current && !searchRef.current.contains(e.target)) setShowSuggestions(false);
+      if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -97,6 +113,7 @@ const Navbar = () => {
     setMobileOpen(false);
     setProfileOpen(false);
     setNotifOpen(false);
+    setMoreOpen(false);
     setShowSuggestions(false);
   }, [location.pathname]);
 
@@ -129,72 +146,145 @@ const Navbar = () => {
 
   const isAdminOrProvider = user?.role === 'admin' || user?.role === 'provider';
   const isOnDashboardRoute = location.pathname.startsWith('/provider') || location.pathname.startsWith('/admin');
-  if (loading) return <div className="h-16 md:h-18" />;
+  if (loading) return isHome ? null : <div className="h-16 md:h-18" />;
   if (isAdminOrProvider && isAuthenticated && isOnDashboardRoute) return null;
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/85 backdrop-blur-md border-b border-slate-200/80 shadow-xs transition-all">
+      <nav
+        className={
+          isHome
+            ? 'absolute top-0 left-0 right-0 z-50 pt-2'
+            : 'fixed top-0 left-0 right-0 z-50 bg-[#f7f5f0]/90 backdrop-blur-md border-b border-[#ebe8df] shadow-xs transition-all'
+        }
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 md:h-18 gap-4">
+          <div className={`flex items-center justify-between gap-4 ${isHome ? 'h-16 md:h-20' : 'h-16 md:h-18'}`}>
             {/* Logo */}
-            <BrandLogo size="sm" />
+            <BrandLogo size="sm" variant={isHome ? 'inverse' : 'default'} />
 
             {/* Desktop Navigation Links */}
-            <div className="hidden md:flex items-center gap-6 ml-4">
-              <Link
-                to="/"
-                className={`text-sm font-semibold transition-colors duration-150 ${
-                  location.pathname === '/' ? 'text-[#0284C7]' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Home
-              </Link>
-              <Link
-                to="/services"
-                className={`text-sm font-semibold transition-colors duration-150 ${
-                  location.pathname === '/services' ? 'text-[#0284C7]' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Services
-              </Link>
-              <Link
-                to="/about"
-                className={`text-sm font-semibold transition-colors duration-150 ${
-                  location.pathname === '/about' ? 'text-[#0284C7]' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                About
-              </Link>
-              <Link
-                to="/help"
-                className={`text-sm font-semibold transition-colors duration-150 ${
-                  location.pathname === '/help' ? 'text-[#0284C7]' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Help
-              </Link>
-            </div>
+            {isHome ? (
+              <div className="hidden md:flex items-center gap-1 rounded-full bg-[#1a1a18]/50 backdrop-blur-md border border-[#f7f5f0]/20 p-1.5 shadow-sm">
+                <Link
+                  to="/"
+                  className="px-4 py-1.5 rounded-full text-sm font-semibold bg-[#f7f5f0]/25 text-[#f7f5f0] transition-colors"
+                >
+                  Home
+                </Link>
+                <Link
+                  to="/services"
+                  className="px-4 py-1.5 rounded-full text-sm font-medium text-[#ebe8df] hover:text-[#f7f5f0] hover:bg-[#f7f5f0]/10 transition-colors"
+                >
+                  Services
+                </Link>
+                <Link
+                  to="/about"
+                  className="px-4 py-1.5 rounded-full text-sm font-medium text-[#ebe8df] hover:text-[#f7f5f0] hover:bg-[#f7f5f0]/10 transition-colors"
+                >
+                  About
+                </Link>
+                <Link
+                  to="/help"
+                  className="px-4 py-1.5 rounded-full text-sm font-medium text-[#ebe8df] hover:text-[#f7f5f0] hover:bg-[#f7f5f0]/10 transition-colors"
+                >
+                  Help
+                </Link>
 
-            {/* Omni Search Bar — Desktop */}
+                {/* Categories Dropdown matching header pill design */}
+                <div className="relative" ref={moreRef}>
+                  <button
+                    type="button"
+                    onClick={() => setMoreOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-1 px-4 py-1.5 rounded-full text-sm font-medium text-[#ebe8df] hover:text-[#f7f5f0] hover:bg-[#f7f5f0]/10 transition-colors"
+                  >
+                    <span>Categories</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  <AnimatePresence>
+                    {moreOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#f7f5f0] border border-[#dedad0] shadow-xl py-2 z-50"
+                      >
+                        <div className="px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#6a675f]">
+                          Service Categories
+                        </div>
+                        {quickCategories.map((cat) => (
+                          <Link
+                            key={cat}
+                            to={`/services?category=${encodeURIComponent(cat)}`}
+                            onClick={() => setMoreOpen(false)}
+                            className="block px-3.5 py-2 text-xs font-semibold text-[#1a1a18] hover:bg-[#ebe8df] hover:text-[#b3261e] transition-colors"
+                          >
+                            {cat}
+                          </Link>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            ) : (
+              <div className="hidden md:flex items-center gap-6 ml-4">
+                <Link
+                  to="/"
+                  className={`text-sm font-semibold transition-colors duration-150 ${
+                    location.pathname === '/' ? 'text-[#b3261e]' : 'text-[#6a675f] hover:text-[#1a1a18]'
+                  }`}
+                >
+                  Home
+                </Link>
+                <Link
+                  to="/services"
+                  className={`text-sm font-semibold transition-colors duration-150 ${
+                    location.pathname === '/services' ? 'text-[#b3261e]' : 'text-[#6a675f] hover:text-[#1a1a18]'
+                  }`}
+                >
+                  Services
+                </Link>
+                <Link
+                  to="/about"
+                  className={`text-sm font-semibold transition-colors duration-150 ${
+                    location.pathname === '/about' ? 'text-[#b3261e]' : 'text-[#6a675f] hover:text-[#1a1a18]'
+                  }`}
+                >
+                  About
+                </Link>
+                <Link
+                  to="/help"
+                  className={`text-sm font-semibold transition-colors duration-150 ${
+                    location.pathname === '/help' ? 'text-[#b3261e]' : 'text-[#6a675f] hover:text-[#1a1a18]'
+                  }`}
+                >
+                  Help
+                </Link>
+              </div>
+            )}
+
+            {/* Omni Search Bar — Desktop (shown on inner pages; Home hero has integrated pill bar) */}
+            {!isHome && (
             <form onSubmit={handleSearch} ref={searchRef} className="hidden md:flex items-center flex-1 max-w-lg mx-4 relative">
               <div className="relative w-full">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6a675f] w-4 h-4" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
                   placeholder="Search services (e.g. Electrician, AC Repair, Cleaning)..."
-                  className="w-full pl-11 pr-10 py-2.5 rounded-full bg-slate-100/80 border border-slate-200/60
-                           focus:bg-white focus:border-[#0EA5E9] focus:ring-4 focus:ring-[#0EA5E9]/15
-                           text-sm text-slate-900 placeholder:text-slate-400 transition-all duration-200 outline-none"
+                  className="w-full pl-11 pr-10 py-2.5 rounded-full bg-[#ebe8df] border border-[#dedad0]
+                           focus:bg-[#f7f5f0] focus:border-[#b3261e] focus:ring-4 focus:ring-[#b3261e]/15
+                           text-sm text-[#1a1a18] placeholder:text-[#6a675f] transition-all duration-200 outline-none"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => { setSearchQuery(''); setShowSuggestions(false); }}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#6a675f] hover:text-[#1a1a18] p-1"
                     aria-label="Clear search input"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -210,13 +300,13 @@ const Navbar = () => {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -4, scale: 0.98 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-slate-200/80 overflow-hidden z-50 py-2"
+                    className="absolute left-0 right-0 top-full mt-2 bg-[#f7f5f0] rounded-2xl shadow-xl border border-[#dedad0] overflow-hidden z-50 py-2"
                   >
                     {suggestions.length > 0 ? (
                       <div>
-                        <div className="px-4 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <div className="px-4 py-1.5 text-[11px] font-bold text-[#6a675f] uppercase tracking-wider flex items-center justify-between">
                           <span>Matching Services</span>
-                          <span className="text-[10px] text-slate-400">{suggestions.length} results</span>
+                          <span className="text-[10px] text-[#6a675f]">{suggestions.length} results</span>
                         </div>
                         {suggestions.map((svc) => (
                           <button
@@ -227,45 +317,46 @@ const Navbar = () => {
                               setSearchQuery('');
                               navigate(`/services/${svc.id || svc._id}`);
                             }}
-                            className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-slate-50 transition-colors group"
+                            className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-[#ebe8df] transition-colors group"
                           >
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-8 h-8 rounded-lg bg-sky-50 text-[#0284C7] flex items-center justify-center shrink-0 group-hover:bg-[#0EA5E9] group-hover:text-white transition-colors">
+                              <div className="w-8 h-8 rounded-lg bg-[#ebe8df] text-[#b3261e] flex items-center justify-center shrink-0 group-hover:bg-[#b3261e] group-hover:text-white transition-colors">
                                 <Search className="w-3.5 h-3.5" />
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-800 truncate group-hover:text-[#0284C7] transition-colors">
+                                <p className="text-sm font-semibold text-[#1a1a18] truncate group-hover:text-[#b3261e] transition-colors">
                                   {svc.name}
                                 </p>
-                                <p className="text-xs text-slate-400 capitalize">{svc.category}</p>
+                                <p className="text-xs text-[#6a675f] capitalize">{svc.category}</p>
                               </div>
                             </div>
-                            <span className="text-xs font-bold text-slate-700 font-mono shrink-0 ml-3 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
+                            <span className="text-xs font-bold text-[#1a1a18] font-mono shrink-0 ml-3 bg-[#ebe8df] px-2 py-1 rounded-md border border-[#dedad0]">
                               ₹{svc.price || svc.fixedPrice || svc.basePrice || 0}
                             </span>
                           </button>
                         ))}
-                        <div className="border-t border-slate-100 mt-1 pt-1">
+                        <div className="border-t border-[#dedad0] mt-1 pt-1">
                           <button
                             type="button"
                             onClick={handleSearch}
-                            className="w-full px-4 py-2 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 text-left flex items-center justify-between"
+                            className="w-full px-4 py-2 text-xs font-semibold text-[#b3261e] hover:bg-[#ebe8df] text-left flex items-center justify-between"
                           >
                             <span>Search all results for &ldquo;{searchQuery}&rdquo;</span>
-                            <span className="text-[10px] font-mono text-slate-400">↵ Enter</span>
+                            <span className="text-[10px] font-mono text-[#6a675f]">↵ Enter</span>
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div className="px-4 py-5 text-center">
-                        <p className="text-sm text-slate-600 font-medium">No services matching &ldquo;{searchQuery}&rdquo;</p>
-                        <p className="text-xs text-slate-400 mt-1">Press Enter to search all catalog items</p>
+                        <p className="text-sm text-[#1a1a18] font-medium">No services matching &ldquo;{searchQuery}&rdquo;</p>
+                        <p className="text-xs text-[#6a675f] mt-1">Press Enter to search all catalog items</p>
                       </div>
                     )}
                   </motion.div>
                 )}
               </AnimatePresence>
             </form>
+            )}
 
             {/* Right Section Actions */}
             <div className="flex items-center gap-2 sm:gap-3">
@@ -273,13 +364,17 @@ const Navbar = () => {
                 <div className="flex items-center gap-2">
                   <Link
                     to="/login"
-                    className="inline-flex items-center justify-center rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                    className={`inline-flex items-center justify-center rounded-full px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold transition ${
+                      isHome
+                        ? 'text-[#f7f5f0] hover:bg-white/10'
+                        : 'text-[#1a1a18] hover:bg-[#ebe8df]'
+                    }`}
                   >
                     Log in
                   </Link>
                   <Link
                     to="/register"
-                    className="inline-flex items-center justify-center rounded-xl bg-[#0EA5E9] hover:bg-[#0284C7] px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-white shadow-xs transition hover:shadow focus:ring-2 focus:ring-[#0EA5E9]/40"
+                    className="inline-flex items-center justify-center rounded-full bg-[#b3261e] hover:bg-[#9c2019] px-4 sm:px-5 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-xs transition hover:shadow focus:ring-2 focus:ring-[#b3261e]/40"
                   >
                     Get Started
                   </Link>
@@ -305,7 +400,9 @@ const Navbar = () => {
                           }
                         }
                       }}
-                      className="relative p-2.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                      className={`relative p-2.5 rounded-xl transition-colors ${
+                        isHome ? 'text-[#f7f5f0] hover:bg-white/15' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
                       aria-label="Notifications"
                     >
                       <Bell className="w-5 h-5" />
@@ -371,7 +468,9 @@ const Navbar = () => {
                   <div className="relative" ref={profileRef}>
                     <button
                       onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
-                      className="flex items-center gap-2 p-1.5 pr-2.5 rounded-xl hover:bg-slate-100 transition-colors"
+                      className={`flex items-center gap-2 p-1.5 pr-2.5 rounded-xl transition-colors ${
+                        isHome ? 'hover:bg-white/15' : 'hover:bg-slate-100'
+                      }`}
                       aria-label="User menu"
                     >
                       {user?.profileImage || user?.avatar ? (
@@ -385,10 +484,14 @@ const Navbar = () => {
                           {user?.name?.charAt(0)?.toUpperCase() || '?'}
                         </div>
                       )}
-                      <span className="hidden sm:inline text-xs font-semibold text-slate-700 max-w-[100px] truncate">
+                      <span className={`hidden sm:inline text-xs font-semibold max-w-[100px] truncate ${
+                        isHome ? 'text-[#f7f5f0]' : 'text-slate-700'
+                      }`}>
                         {user.name?.split(' ')[0]}
                       </span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                        isHome ? 'text-[#ebe8df]' : 'text-slate-400'
+                      } ${profileOpen ? 'rotate-180' : ''}`} />
                     </button>
 
                     <AnimatePresence>
@@ -529,7 +632,9 @@ const Navbar = () => {
               {/* Mobile Menu Toggle Button */}
               <button
                 onClick={() => setMobileOpen(!mobileOpen)}
-                className="md:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+                className={`md:hidden p-2 rounded-xl transition-colors ${
+                  isHome ? 'text-[#f7f5f0] hover:bg-white/15' : 'text-slate-600 hover:bg-slate-100'
+                }`}
                 aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
               >
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -717,8 +822,8 @@ const Navbar = () => {
         </div>
       )}
 
-      {/* Spacer */}
-      <div className="h-16 md:h-18" />
+      {/* Spacer (not needed on Home where header overlays the rounded Hero card) */}
+      {!isHome && <div className="h-16 md:h-18" />}
     </>
   );
 };

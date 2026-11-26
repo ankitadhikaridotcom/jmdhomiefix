@@ -19,3 +19,4 @@ const TableRow = ({ children, className = '', onClick, isHeader = false }) => {
 };
 
 export default TableRow;
+1

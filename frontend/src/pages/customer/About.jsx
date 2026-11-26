@@ -37,10 +37,10 @@ const About = () => {
             <motion.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}>
               <h2 className="section-title">Our Mission</h2>
               <p className="text-gray-600 mt-4 leading-relaxed">
-                HomeFix was born from a simple observation — finding reliable home service professionals shouldn't be so hard. Too many homeowners struggle with unverified workers, inconsistent pricing, and unreliable service.
+                Nivestry was born from a simple observation — finding reliable home service professionals shouldn't be so hard. Too many homeowners struggle with unverified workers, inconsistent pricing, and unreliable service.
               </p>
               <p className="text-gray-600 mt-4 leading-relaxed">
-                We built HomeFix to change that. Our platform connects you with <strong>verified, trained professionals</strong> who deliver quality work at transparent prices. Every provider on our platform goes through a rigorous background check and skill assessment.
+                We built Nivestry to change that. Our platform connects you with <strong>verified, trained professionals</strong> who deliver quality work at transparent prices. Every provider on our platform goes through a rigorous background check and skill assessment.
               </p>
               <div className="flex flex-wrap gap-4 mt-6">
                 {['Background Verified', 'Trained Professionals', 'Transparent Pricing', 'Quality Guaranteed'].map((item) => (
@@ -96,8 +96,8 @@ const About = () => {
             <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-white/10" />
             <div className="absolute -left-20 -bottom-20 w-60 h-60 rounded-full bg-white/5" />
             <div className="relative z-10">
-              <h3 className="text-2xl md:text-3xl font-bold">Ready to experience HomeFix?</h3>
-              <p className="text-blue-100 mt-3">Join 10,000+ homeowners who trust HomeFix for their home services.</p>
+              <h3 className="text-2xl md:text-3xl font-bold">Ready to experience Nivestry?</h3>
+              <p className="text-blue-100 mt-3">Join 10,000+ homeowners who trust Nivestry for their home services.</p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
                 <a href="/services" className="bg-white text-primary-600 px-8 py-3 rounded-xl font-bold text-sm hover:bg-gray-100 transition-colors shadow-lg">
                   Browse Services

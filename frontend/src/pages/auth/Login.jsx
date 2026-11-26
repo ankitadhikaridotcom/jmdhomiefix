@@ -36,22 +36,30 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex">
-      {/* Left — Branding */}
-      <div className="hidden lg:flex lg:w-1/2 gradient-hero relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSA2MCAwIEwgMCAwIDAgNjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjA1KSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-50" />
+      {/* Left — Branding with Cleaning Service Photography */}
+      <div className="hidden lg:flex lg:w-1/2 bg-[#1a1a18] relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <img
+            src="/deep-home-cleaning.jpg"
+            alt="Professional Deep Home Cleaning Service"
+            className="h-full w-full object-cover object-center opacity-85"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#1a1a18]/92 via-[#1a1a18]/72 to-[#1a1a18]/40" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#1a1a18]/65 via-transparent to-[#1a1a18]/85" />
+        </div>
 
-        <div className="relative z-10 flex flex-col justify-center px-12 xl:px-20 text-white">
+        <div className="relative z-10 flex flex-col justify-center px-12 xl:px-20 text-[#f7f5f0]">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <BrandLogo size="lg" artwork className="mb-8" />
-            <h1 className="text-4xl xl:text-5xl font-bold leading-tight">
+            <BrandLogo size="lg" variant="inverse" subtitle="HOME SERVICES" className="mb-8" />
+            <h1 className="text-4xl xl:text-5xl font-bold leading-tight text-[#f7f5f0]">
               Welcome back to<br />
-              <span className="text-secondary-400">HomeFix</span>
+              <span className="text-[#ebe8df] underline decoration-[#b3261e] decoration-4 underline-offset-8">Nivestry</span>
             </h1>
-            <p className="text-blue-100 mt-4 text-lg leading-relaxed max-w-md">
+            <p className="text-[#ebe8df]/90 mt-5 text-lg leading-relaxed max-w-md">
               Your trusted marketplace for home services. Book verified professionals in minutes.
             </p>
 
@@ -59,7 +67,7 @@ const Login = () => {
               {[
                 { num: '10K+', text: 'Happy Customers' },
                 { num: '500+', text: 'Verified Professionals' },
-                { num: '4.8⭐', text: 'Average Rating' },
+                { num: '4.8★', text: 'Average Rating' },
               ].map((stat, i) => (
                 <motion.div
                   key={i}
@@ -68,18 +76,14 @@ const Login = () => {
                   transition={{ delay: 0.3 + i * 0.1 }}
                   className="flex items-center gap-3"
                 >
-                  <div className="w-2 h-2 rounded-full bg-secondary-400" />
-                  <span className="font-semibold">{stat.num}</span>
-                  <span className="text-blue-200">{stat.text}</span>
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#b3261e]" />
+                  <span className="font-semibold text-[#f7f5f0]">{stat.num}</span>
+                  <span className="text-[#ebe8df]/85">{stat.text}</span>
                 </motion.div>
               ))}
             </div>
           </motion.div>
         </div>
-
-        {/* Decorative circles */}
-        <div className="absolute -bottom-20 -right-20 w-64 h-64 rounded-full bg-white/5" />
-        <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/5" />
       </div>
 
       {/* Right — Form */}
@@ -97,7 +101,7 @@ const Login = () => {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Welcome Back</h2>
-              <p className="text-gray-500 text-sm mt-1">Login to your HomeFix account</p>
+              <p className="text-gray-500 text-sm mt-1">Login to your Nivestry account</p>
             </div>
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

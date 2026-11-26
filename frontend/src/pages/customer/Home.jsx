@@ -43,15 +43,77 @@ const categoryIcons = {
 };
 
 const categoryBadgeStyles = {
-  Electrician: 'bg-amber-50 text-amber-600 border-amber-200/80',
-  Plumber: 'bg-sky-50 text-[#0284C7] border-sky-200/80',
-  Carpenter: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-  'AC Repair': 'bg-cyan-50 text-cyan-700 border-cyan-200/80',
-  'Home Cleaning': 'bg-orange-50 text-[#FF7A1A] border-orange-200/80',
-  Painting: 'bg-purple-50 text-purple-700 border-purple-200/80',
-  'Appliance Repair': 'bg-slate-100 text-slate-700 border-slate-200',
-  'Pest Control': 'bg-rose-50 text-rose-600 border-rose-200/80',
-  'Salon at Home': 'bg-pink-50 text-pink-700 border-pink-200/80',
+  Electrician: 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  Plumber: 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  Carpenter: 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  'AC Repair': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  'Home Cleaning': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  Painting: 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  'Appliance Repair': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  'Pest Control': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  'Salon at Home': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+};
+
+// Icon background colors per category (matching screenshot design)
+const categoryIconBg = {
+  'AC Repair': 'bg-orange-50 text-orange-500',
+  Electrician: 'bg-amber-50 text-amber-500',
+  Plumber: 'bg-teal-50 text-teal-500',
+  'Home Cleaning': 'bg-emerald-50 text-emerald-600',
+  Carpenter: 'bg-orange-50 text-orange-600',
+  'Appliance Repair': 'bg-slate-100 text-slate-600',
+  Painting: 'bg-teal-50 text-teal-600',
+  'Pest Control': 'bg-slate-100 text-slate-600',
+  'Salon at Home': 'bg-emerald-50 text-emerald-500',
+};
+
+// Category metadata for the new "Popular Home Services" cards
+const categoryMeta = {
+  'AC Repair': {
+    description: 'Deep jet cleaning, gas refill & fixes',
+    startsAt: 399,
+    badge: { text: 'Hot Season', color: 'bg-orange-100 text-orange-600' },
+  },
+  Electrician: {
+    description: 'Wiring, MCB tripping, fan installation',
+    startsAt: 149,
+    badge: { text: '30m Express', color: 'bg-[#1a1a18] text-white' },
+  },
+  Plumber: {
+    description: 'Tap leaks, pipeline choking, geyser fits',
+    startsAt: 199,
+    badge: null,
+  },
+  'Home Cleaning': {
+    description: 'Bathrooms, kitchen, sofa shampooing',
+    startsAt: 499,
+    badge: { text: 'Top Rated', color: 'bg-teal-100 text-teal-700' },
+  },
+  Carpenter: {
+    description: 'Locks, hinge repairs, custom woodwork',
+    startsAt: 199,
+    badge: null,
+  },
+  'Appliance Repair': {
+    description: 'Washing machine, fridge, microwave',
+    startsAt: 299,
+    badge: null,
+  },
+  Painting: {
+    description: 'Damp proofing, full home repaint',
+    startsAt: 999,
+    badge: null,
+  },
+  'Pest Control': {
+    description: 'Cockroach, termite & bedbug relief',
+    startsAt: 599,
+    badge: null,
+  },
+  'Salon at Home': {
+    description: 'Spa, haircuts, hygiene grooming',
+    startsAt: 249,
+    badge: null,
+  },
 };
 
 const steps = [
@@ -144,10 +206,27 @@ const Home = () => {
         latitude: user.address.latitude,
         longitude: user.address.longitude,
         address: user.address.formattedAddress || `${user.address.city || ''}, ${user.address.state || ''}`,
+        locality: user.address.locality || '',
+        city: user.address.city || '',
+        state: user.address.state || '',
+        pincode: user.address.pincode || '',
       };
       setUserLocation(location);
       fetchNearbyServices(location.latitude, location.longitude);
     } else {
+      try {
+        const savedLoc = localStorage.getItem('nivestry_user_location') || localStorage.getItem('homiefix_user_location');
+        if (savedLoc) {
+          const parsed = JSON.parse(savedLoc);
+          if (parsed?.latitude && parsed?.longitude) {
+            setUserLocation(parsed);
+            fetchNearbyServices(parsed.latitude, parsed.longitude);
+            return;
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
       fetchDefaultServices();
     }
   }, [user]);
@@ -207,7 +286,7 @@ const Home = () => {
   };
 
   return (
-    <div className="home-page min-h-screen bg-slate-50">
+    <div className="home-page min-h-screen bg-[#f7f5f0] text-[#1a1a18]">
       <LocationModal
         isOpen={isLocationModalOpen}
         onClose={() => setIsLocationModalOpen(false)}
@@ -215,229 +294,187 @@ const Home = () => {
         initialLocation={userLocation}
       />
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-white border-b border-slate-200/70 pt-10 pb-16 md:pt-16 md:pb-24">
-        {/* Ambient Subtle Gradients */}
-        <div className="pointer-events-none absolute -left-40 top-0 h-96 w-96 rounded-full bg-sky-100/50 blur-3xl" />
-        <div className="pointer-events-none absolute -right-40 top-20 h-96 w-96 rounded-full bg-orange-100/40 blur-3xl" />
+      {/* Hero Section — Full-Width Left-to-Right Background with Integrated Header Overlay */}
+      <section className="relative w-full bg-[#1a1a18] border-b border-[#dedad0] pt-24 pb-14 sm:pt-28 sm:pb-20 lg:pt-32 lg:pb-24">
+        {/* Full-Bleed Background Image & Directional Gradient Overlay */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <img
+            src="/deep-home-cleaning.jpg"
+            alt="Professional Deep Home Cleaning"
+            className="h-full w-full object-cover object-center opacity-85"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#1a1a18]/92 via-[#1a1a18]/68 to-[#1a1a18]/25" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#1a1a18]/65 via-transparent to-[#1a1a18]/75" />
+        </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="relative z-10"
-          >
-            {/* Trust Pill */}
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50/80 px-3.5 py-1.5 text-xs font-semibold text-[#0284C7] shadow-xs">
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#0EA5E9] text-white">
-                <CheckCircle2 className="w-3 h-3" />
-              </span>
-              <span>Trusted Doorstep Home Services</span>
-            </div>
+        <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="relative z-20 max-w-2xl"
+            >
+              {/* Trust Pill */}
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#f7f5f0]/20 bg-[#1a1a18]/45 backdrop-blur-md px-3.5 py-1.5 text-xs font-semibold text-[#f7f5f0] shadow-xs">
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#b3261e] text-[#f7f5f0]">
+                  <CheckCircle2 className="w-3 h-3" />
+                </span>
+                <span>Trusted Doorstep Home Services</span>
+              </div>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-[3.8rem] font-extrabold leading-[1.1] tracking-tight text-[#0F1D33]">
-              Your Home Fixed by{' '}
-              <span className="bg-gradient-to-r from-[#0EA5E9] to-[#0284C7] bg-clip-text text-transparent">
-                Verified Experts
-              </span>
-            </h1>
-            <p className="mt-5 max-w-xl text-base sm:text-lg text-slate-600 leading-relaxed">
-              Book skilled electricians, plumbers, appliance technicians, and cleaning specialists with transparent pricing and instant booking confirmation.
-            </p>
+              <h1 className="text-4xl sm:text-5xl lg:text-[3.75rem] font-extrabold leading-[1.08] tracking-tight text-[#f7f5f0]">
+                Your Home Fixed by{' '}
+                <span className="text-[#ebe8df] underline decoration-[#b3261e] decoration-4 underline-offset-8">
+                  Verified Experts
+                </span>
+              </h1>
+              <p className="mt-5 max-w-xl text-base sm:text-lg text-[#ebe8df]/90 leading-relaxed">
+                Book skilled electricians, plumbers, appliance technicians, and cleaning specialists with transparent pricing and instant booking confirmation.
+              </p>
 
-            {/* Omni Search Box */}
-            <div ref={searchContainerRef} className="relative mt-8 max-w-xl">
-              <form
-                onSubmit={handleSearch}
-                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:border-slate-300 transition-all"
-              >
-                <div className="flex min-w-0 flex-1 items-center gap-3 px-3 py-1">
-                  <Search className="w-5 h-5 text-[#0EA5E9] shrink-0" />
-                  <input
-                    type="search"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                    placeholder="Search services (e.g. AC Repair, Electrician)..."
-                    aria-label="Search home services"
-                    className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => { setSearchQuery(''); setShowSuggestions(false); }}
-                      className="text-slate-400 hover:text-slate-600 p-1"
-                      aria-label="Clear search"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#FF7A1A] hover:bg-[#EA580C] px-6 py-3 font-semibold text-white text-sm shadow-sm transition hover:shadow focus:outline-none focus:ring-2 focus:ring-[#FF7A1A]/40 shrink-0"
+              {/* Unified Pill Search + Location Bar (matching reference layout with Stitch colors) */}
+              <div ref={searchContainerRef} className="relative mt-8 max-w-2xl">
+                <form
+                  onSubmit={handleSearch}
+                  className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-0 rounded-2xl sm:rounded-full border border-[#f7f5f0]/30 bg-[#1a1a18]/60 backdrop-blur-md p-1.5 shadow-xl hover:border-[#f7f5f0]/50 transition-all"
                 >
-                  <span>Find Pros</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </form>
-
-              {/* Suggestions Flyout */}
-              <AnimatePresence>
-                {showSuggestions && searchQuery.trim() && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden z-50 py-2 text-left"
-                  >
-                    {suggestions.length > 0 ? (
-                      <div>
-                        <div className="px-4 py-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                          <span>Services Available</span>
-                          <span className="text-[10px] text-slate-400 font-normal">{suggestions.length} found</span>
-                        </div>
-                        {suggestions.map((svc) => (
-                          <button
-                            key={svc.id || svc._id}
-                            type="button"
-                            onClick={() => {
-                              setShowSuggestions(false);
-                              navigate(`/services/${svc.id || svc._id}`);
-                            }}
-                            className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50 transition-colors group"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-xl bg-sky-50 text-[#0284C7] flex items-center justify-center shrink-0">
-                                <Search className="w-4 h-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-[#0284C7] transition-colors">
-                                  {svc.name}
-                                </p>
-                                <p className="text-xs text-slate-400 capitalize">{svc.category}</p>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0 ml-3">
-                              <span className="text-sm font-bold text-slate-900 font-mono">
-                                ₹{svc.price || svc.fixedPrice || svc.basePrice || 0}
-                              </span>
-                              <span className="block text-[10px] text-slate-400 font-medium">onwards</span>
-                            </div>
-                          </button>
-                        ))}
-                        <div className="border-t border-slate-100 mt-1 pt-1">
-                          <button
-                            type="button"
-                            onClick={handleSearch}
-                            className="w-full px-4 py-2.5 text-xs font-semibold text-[#0284C7] hover:bg-sky-50 text-left flex items-center justify-between"
-                          >
-                            <span>View all results for &ldquo;{searchQuery}&rdquo;</span>
-                            <span className="font-bold">Explore &rarr;</span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="px-4 py-5 text-center">
-                        <p className="text-sm text-slate-600 font-medium">No direct match for &ldquo;{searchQuery}&rdquo;</p>
-                        <p className="text-xs text-slate-400 mt-1">Press Find Pros to view all available services</p>
-                      </div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-1">
+                    <Search className="w-4 h-4 text-[#ebe8df]/80 shrink-0" />
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                      placeholder="Search services (e.g. AC Repair, Electrician)..."
+                      aria-label="Search home services"
+                      className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm text-[#f7f5f0] outline-none placeholder:text-[#ebe8df]/70 focus:ring-0"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => { setSearchQuery(''); setShowSuggestions(false); }}
+                        className="text-[#ebe8df]/70 hover:text-[#f7f5f0] p-1"
+                        aria-label="Clear search"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Location Selector Pill */}
-            <div className="mt-4 flex items-center gap-3 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setIsLocationModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-100/90 hover:bg-slate-200/80 px-3.5 py-1.5 text-xs text-slate-700 transition"
-              >
-                <MapPin className="w-3.5 h-3.5 text-[#0EA5E9]" />
-                <span className="font-medium truncate max-w-[240px]">
-                  {userLocation?.address || 'Set your location to see nearby pros'}
-                </span>
-                <span className="font-bold text-[#0284C7] ml-1">
-                  {userLocation ? 'Change' : 'Choose'}
-                </span>
-              </button>
-            </div>
-
-            {/* Micro Guarantees */}
-            <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs sm:text-sm text-slate-600">
-              <span className="inline-flex items-center gap-1.5 font-medium">
-                <ShieldCheck className="w-4 h-4 text-[#0EA5E9]" />
-                <span>Verified & Background Checked</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5 font-medium">
-                <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-                <span>4.8/5 Avg Professional Rating</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5 font-medium">
-                <Clock className="w-4 h-4 text-emerald-600" />
-                <span>On-Time Arrival Guarantee</span>
-              </span>
-            </div>
-          </motion.div>
-
-          {/* Hero Visual Card Stack */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="relative mx-auto w-full max-w-[540px] lg:ml-auto"
-          >
-            <div className="relative aspect-[16/11] overflow-hidden rounded-3xl border border-slate-200/80 shadow-[0_20px_50px_rgba(15,23,42,0.12)] bg-gradient-to-tr from-slate-900 to-slate-800">
-              <img
-                src="https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80"
-                alt="Professional Home Service"
-                className="w-full h-full object-cover mix-blend-overlay opacity-80"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0F1D33]/90 via-[#0F1D33]/30 to-transparent" />
-
-              {/* Top Floating Badge */}
-              <div className="absolute left-5 top-5 rounded-2xl border border-white/40 bg-white/95 px-4 py-2.5 shadow-md backdrop-blur-md">
-                <div className="flex items-center gap-1 text-amber-500">
-                  {[0, 1, 2, 3, 4].map((star) => (
-                    <Star key={star} className="w-3.5 h-3.5 fill-amber-400" />
-                  ))}
-                  <span className="ml-1 text-xs font-bold text-slate-900 font-mono">4.9/5</span>
-                </div>
-                <p className="text-[11px] font-semibold text-slate-600 mt-0.5">Over 10,000+ homes serviced</p>
-              </div>
-
-              {/* Bottom Card Overlay */}
-              <div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/20 bg-white/95 p-4 shadow-xl backdrop-blur-md">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-sky-100 text-[#0284C7] flex items-center justify-center shrink-0">
-                      <Sparkles className="w-5 h-5 text-[#0EA5E9]" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-bold text-slate-900 text-sm truncate">Need a custom job done?</p>
-                      <p className="text-xs text-slate-500 truncate">Post your custom request & receive quotes.</p>
-                    </div>
                   </div>
-                  <Link
-                    to="/request-custom-service"
-                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0EA5E9] hover:bg-[#0284C7] text-white text-xs font-bold transition shadow-xs shrink-0"
+
+                  {/* Vertical Divider */}
+                  <div className="hidden sm:block h-7 w-px bg-[#f7f5f0]/25 mx-1 shrink-0" />
+
+                  {/* Location Selector Pill Half */}
+                  <button
+                    type="button"
+                    onClick={() => setIsLocationModalOpen(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-left text-sm text-[#f7f5f0] hover:bg-white/10 rounded-xl sm:rounded-full transition shrink-0 max-w-full sm:max-w-[200px]"
+                    title={userLocation?.address || 'Set your location to see nearby pros'}
                   >
-                    <span>Post Request</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </Link>
-                </div>
+                    <MapPin className="w-4 h-4 text-[#b3261e] shrink-0" />
+                    <span className="truncate font-medium text-[#ebe8df]">
+                      {userLocation?.city || userLocation?.locality || userLocation?.address || 'Set Location'}
+                    </span>
+                  </button>
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl sm:rounded-full bg-[#b3261e] hover:bg-[#9c2019] px-5 py-2.5 font-semibold text-white text-sm shadow-sm transition hover:shadow focus:outline-none focus:ring-2 focus:ring-[#b3261e]/40 shrink-0"
+                  >
+                    <span>Find Experts</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </form>
+
+                {/* Suggestions Flyout */}
+                <AnimatePresence>
+                  {showSuggestions && searchQuery.trim() && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute left-0 right-0 top-full mt-2 bg-[#f7f5f0] rounded-2xl shadow-2xl border border-[#dedad0] overflow-hidden z-50 py-2 text-left"
+                    >
+                      {suggestions.length > 0 ? (
+                        <div>
+                          <div className="px-4 py-1.5 text-[11px] font-bold text-[#6a675f] uppercase tracking-wider flex items-center justify-between">
+                            <span>Services Available</span>
+                            <span className="text-[10px] text-[#6a675f] font-normal">{suggestions.length} found</span>
+                          </div>
+                          {suggestions.map((svc) => (
+                            <button
+                              key={svc.id || svc._id}
+                              type="button"
+                              onClick={() => {
+                                setShowSuggestions(false);
+                                navigate(`/services/${svc.id || svc._id}`);
+                              }}
+                              className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#ebe8df] transition-colors group"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-[#ebe8df] text-[#b3261e] flex items-center justify-center shrink-0">
+                                  <Search className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-[#1a1a18] truncate group-hover:text-[#b3261e] transition-colors">
+                                    {svc.name}
+                                  </p>
+                                  <p className="text-xs text-[#6a675f] capitalize">{svc.category}</p>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0 ml-3">
+                                <span className="text-sm font-bold text-[#1a1a18] font-mono">
+                                  ₹{svc.price || svc.fixedPrice || svc.basePrice || 0}
+                                </span>
+                                <span className="block text-[10px] text-[#6a675f] font-medium">onwards</span>
+                              </div>
+                            </button>
+                          ))}
+                          <div className="border-t border-[#dedad0] mt-1 pt-1">
+                            <button
+                              type="button"
+                              onClick={handleSearch}
+                              className="w-full px-4 py-2.5 text-xs font-semibold text-[#b3261e] hover:bg-[#ebe8df] text-left flex items-center justify-between"
+                            >
+                              <span>View all results for &ldquo;{searchQuery}&rdquo;</span>
+                              <span className="font-bold">Explore &rarr;</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="px-4 py-5 text-center">
+                          <p className="text-sm text-[#1a1a18] font-medium">No direct match for &ldquo;{searchQuery}&rdquo;</p>
+                          <p className="text-xs text-[#6a675f] mt-1">Press Find Experts to view all available services</p>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </div>
+
+              {/* Micro Guarantees */}
+              <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2.5 text-xs sm:text-sm text-[#ebe8df]/85">
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <ShieldCheck className="w-4 h-4 text-[#b3261e]" />
+                  <span>Verified & Background Checked</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <Star className="w-4 h-4 text-[#b3261e] fill-[#b3261e]" />
+                  <span>4.8/5 Avg Professional Rating</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <Clock className="w-4 h-4 text-[#ebe8df]" />
+                  <span>On-Time Arrival Guarantee</span>
+                </span>
+              </div>
           </motion.div>
         </div>
       </section>
 
       {/* Numerical Stats Banner */}
-      <section className="border-b border-slate-200/80 bg-white">
+      <section className="border-b border-[#dedad0] bg-[#ebe8df]">
         <div className="mx-auto grid max-w-7xl grid-cols-2 gap-y-6 px-4 py-8 text-center sm:px-6 md:grid-cols-4 lg:px-8">
           {[
             { value: '15,000+', label: 'Happy Homeowners' },
@@ -445,69 +482,96 @@ const Home = () => {
             { value: '98.5%', label: 'On-Time Completion' },
             { value: '4.9 ★', label: 'Customer Rating' },
           ].map((stat) => (
-            <div key={stat.label} className="border-r last:border-0 border-slate-100">
-              <p className="text-2xl sm:text-3xl font-extrabold text-[#0F1D33] tracking-tight font-mono">{stat.value}</p>
-              <p className="mt-1 text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.label}</p>
+            <div key={stat.label} className="border-r last:border-0 border-[#dedad0]">
+              <p className="text-2xl sm:text-3xl font-extrabold text-[#1a1a18] tracking-tight font-mono">{stat.value}</p>
+              <p className="mt-1 text-xs font-semibold text-[#6a675f] uppercase tracking-wide">{stat.label}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Category Grid Section */}
-      <section className="py-16 sm:py-20 bg-slate-50">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end mb-10">
+      {/* Popular Home Services – Card Grid */}
+      <section className="pt-10 pb-0 sm:pt-12 sm:pb-0 bg-[#f7f5f0] font-sans">
+        {/* Shared 80% Container so Heading aligns cleanly with AC Repair & Service and Deep Cleaning cards */}
+        <div className="w-[92%] sm:w-[88%] lg:w-[80%] mx-auto">
+          {/* Section Header */}
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end mb-8 sm:mb-10">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-[#0284C7]">Full Service Taxonomy</p>
-              <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-[#0F1D33] tracking-tight">
-                Explore by Category
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1a1a18] tracking-tight font-sans">
+                Popular Home Services
               </h2>
-              <p className="mt-1 text-sm text-slate-500">Pick from our specialized home repair and maintenance divisions.</p>
+              <p className="mt-1 text-sm text-[#6a675f] font-normal tracking-normal">
+                Handpicked, background-verified trade specialists ready to assist.
+              </p>
             </div>
             <Link
               to="/services"
-              className="inline-flex items-center gap-1.5 text-sm font-bold text-[#0284C7] hover:text-[#0369A1] transition group"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#b3261e] hover:text-[#9c2019] transition group"
             >
-              <span>See all services</span>
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              <span>View All 30+ Categories</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 sm:gap-4">
-            {categories.map(({ name, icon: Icon, color }) => (
-              <Link
-                key={name}
-                to={`/services?category=${encodeURIComponent(name)}`}
-                className="group flex flex-col sm:flex-row items-center sm:items-start gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 transition-all duration-200 hover:-translate-y-1 hover:border-slate-300 hover:shadow-md text-center sm:text-left"
-              >
-                <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${color} transition group-hover:scale-105`}>
-                  <Icon className="w-5 h-5 stroke-[1.8]" />
-                </span>
-                <div className="min-w-0">
-                  <span className="block truncate text-sm font-bold text-slate-800 group-hover:text-[#0284C7] transition-colors">
-                    {name}
-                  </span>
-                  <span className="mt-1 flex items-center justify-center sm:justify-start gap-1 text-[11px] font-semibold text-slate-400">
-                    <span>Explore</span>
-                    <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                  </span>
-                </div>
-              </Link>
-            ))}
+          {/* Cards Grid */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 lg:gap-5">
+            {categories.map(({ name, icon: Icon }) => {
+              const meta = categoryMeta[name] || {};
+              const iconColors = categoryIconBg[name] || 'bg-slate-100 text-slate-600';
+              return (
+                <Link
+                  key={name}
+                  to={`/services?category=${encodeURIComponent(name)}`}
+                  className="group relative flex flex-col justify-between min-h-[195px] rounded-2xl border border-[#e5e2db] bg-white p-6 transition-all duration-200 hover:-translate-y-1 hover:border-[#b3261e]/40 hover:shadow-lg"
+                >
+                  {/* Top Row: Icon + Badge */}
+                  <div>
+                    <div className="flex items-start justify-between mb-4">
+                      <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconColors} transition group-hover:scale-105`}>
+                        <Icon className="w-6 h-6 stroke-[1.8]" />
+                      </span>
+                      {meta.badge && (
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${meta.badge.color}`}>
+                          {meta.badge.text}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Title */}
+                    <h3 className="text-[15px] font-bold text-[#1a1a18] group-hover:text-[#b3261e] transition-colors leading-snug tracking-tight font-sans">
+                      {name === 'Home Cleaning' ? 'Deep Cleaning' : name === 'AC Repair' ? 'AC Repair & Service' : name === 'Plumber' ? 'Plumbing Fixes' : name === 'Painting' ? 'Painting Solutions' : name === 'Pest Control' ? 'Pest Management' : name === 'Salon at Home' ? 'Grooming & Salon' : name}
+                    </h3>
+
+                    {/* Description */}
+                    <p className="mt-1.5 text-xs leading-relaxed text-[#6a675f] font-normal not-italic">
+                      {meta.description || 'Professional home services'}
+                    </p>
+                  </div>
+
+                  {/* Bottom: Starts at Price */}
+                  <div className="mt-5 flex items-center justify-between pt-2">
+                    <span className="text-xs font-medium text-[#6a675f]">Starts at</span>
+                    <span className="text-base font-bold text-[#1a1a18]">
+                      ₹{meta.startsAt || 199}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>
 
       {/* Recent Bookings (if logged in) */}
       {recentBookings.length > 0 && (
-        <section className="bg-white py-12 border-y border-slate-200/70">
+        <section className="bg-[#f7f5f0] py-12 border-y border-[#ebe8df]">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-end justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[#0284C7]">Account Activity</p>
-                <h2 className="mt-1 text-2xl font-extrabold text-[#0F1D33]">Recent Bookings</h2>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#b3261e]">Account Activity</p>
+                <h2 className="mt-1 text-2xl font-extrabold text-[#1a1a18]">Recent Bookings</h2>
               </div>
-              <Link to="/my-bookings" className="text-sm font-bold text-[#0284C7] hover:underline">
+              <Link to="/my-bookings" className="text-sm font-bold text-[#b3261e] hover:underline">
                 View all bookings &rarr;
               </Link>
             </div>
@@ -521,19 +585,19 @@ const Home = () => {
       )}
 
       {/* Recommended Services Section */}
-      <section className="py-16 sm:py-20 bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <section className="pt-[5%] pb-16 sm:pb-20 bg-[#f7f5f0]">
+        <div className="w-[92%] sm:w-[88%] lg:w-[80%] mx-auto">
           <div className="mb-10 flex items-end justify-between gap-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-[#0284C7]">High-Demand Services</p>
-              <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-[#0F1D33] tracking-tight">
+              <p className="text-xs font-bold uppercase tracking-wider text-[#b3261e]">High-Demand Services</p>
+              <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-[#1a1a18] tracking-tight">
                 Recommended Services
               </h2>
-              <p className="mt-1 text-sm text-slate-500">Most booked repairs and maintenance packages in your area.</p>
+              <p className="mt-1 text-sm text-[#6a675f]">Most booked repairs and maintenance packages in your area.</p>
             </div>
             <Link
               to="/services"
-              className="hidden sm:inline-flex items-center gap-1.5 text-sm font-bold text-[#0284C7] hover:text-[#0369A1] transition group"
+              className="hidden sm:inline-flex items-center gap-1.5 text-sm font-bold text-[#b3261e] hover:text-[#9c2019] transition group"
             >
               <span>Browse Catalog</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
@@ -547,12 +611,12 @@ const Home = () => {
               ))}
             </div>
           ) : services.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-10 text-center">
-              <p className="text-sm font-semibold text-slate-700">No services found in this location.</p>
-              <p className="text-xs text-slate-400 mt-1">Try switching location or browsing all categories.</p>
+            <div className="rounded-2xl border border-[#dedad0] bg-[#ebe8df] p-10 text-center">
+              <p className="text-sm font-semibold text-[#1a1a18]">No services found in this location.</p>
+              <p className="text-xs text-[#6a675f] mt-1">Try switching location or browsing all categories.</p>
               <Link
                 to="/services"
-                className="inline-block mt-4 px-4 py-2 bg-[#0EA5E9] text-white text-xs font-bold rounded-xl"
+                className="inline-block mt-4 px-4 py-2 bg-[#b3261e] text-white text-xs font-bold rounded-xl"
               >
                 View Full Catalog
               </Link>
@@ -568,14 +632,14 @@ const Home = () => {
       </section>
 
       {/* How it Works / 3-Step Process */}
-      <section className="py-16 sm:py-24 bg-slate-50 border-t border-slate-200/80">
+      <section className="py-16 sm:py-24 bg-[#ebe8df] border-t border-[#dedad0]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="text-xs font-bold uppercase tracking-wider text-[#0284C7]">Transparent Booking Process</p>
-            <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-[#0F1D33] tracking-tight">
-              How HomeFix Works
+            <p className="text-xs font-bold uppercase tracking-wider text-[#b3261e]">Transparent Booking Process</p>
+            <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold text-[#1a1a18] tracking-tight">
+              How Nivestry Works
             </h2>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-[#6a675f]">
               Three simple steps to book verified professionals at your convenience.
             </p>
           </div>
@@ -586,16 +650,16 @@ const Home = () => {
               return (
                 <div
                   key={step.number}
-                  className="relative rounded-2xl bg-white border border-slate-200/80 p-6 sm:p-8 shadow-xs hover:shadow-md transition-all duration-200"
+                  className="group relative rounded-2xl bg-[#f7f5f0] border border-[#dedad0] p-6 sm:p-8 shadow-xs hover:border-[#b3261e]/40 hover:shadow-md transition-all duration-200"
                 >
                   <div className="flex items-center justify-between mb-5">
-                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-50 text-[#0284C7] border border-sky-100">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#ebe8df] text-[#b3261e] border border-[#dedad0]">
                       <StepIcon className="w-6 h-6 stroke-[1.8]" />
                     </span>
-                    <span className="text-2xl font-extrabold text-slate-200 font-mono">{step.number}</span>
+                    <span className="text-2xl font-extrabold text-[#dedad0] group-hover:text-[#b3261e]/30 font-mono transition-colors">{step.number}</span>
                   </div>
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900">{step.title}</h3>
-                  <p className="mt-2 text-xs sm:text-sm leading-relaxed text-slate-500">{step.description}</p>
+                  <h3 className="text-base sm:text-lg font-bold text-[#1a1a18]">{step.title}</h3>
+                  <p className="mt-2 text-xs sm:text-sm leading-relaxed text-[#6a675f]">{step.description}</p>
                 </div>
               );
             })}
@@ -604,32 +668,32 @@ const Home = () => {
       </section>
 
       {/* High-Conversion Bottom Banner */}
-      <section className="px-4 py-16 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl rounded-3xl bg-[#0F1D33] px-6 py-12 sm:px-12 sm:py-16 text-white relative overflow-hidden shadow-xl">
-          <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-[#0EA5E9]/15 rounded-full blur-3xl pointer-events-none" />
+      <section className="px-4 py-16 sm:px-6 lg:px-8 bg-[#f7f5f0]">
+        <div className="mx-auto max-w-7xl rounded-3xl bg-[#1a1a18] px-6 py-12 sm:px-12 sm:py-16 text-[#f7f5f0] relative overflow-hidden shadow-xl border border-[#2b2b28]">
+          <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-[#b3261e]/20 rounded-full blur-3xl pointer-events-none" />
           <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
             <div className="max-w-2xl">
-              <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/10 text-sky-300 border border-white/10 uppercase tracking-wider">
+              <span className="px-3 py-1 text-xs font-bold rounded-full bg-[#b3261e]/20 text-[#f7f5f0] border border-[#b3261e]/30 uppercase tracking-wider">
                 Instant Guarantee
               </span>
-              <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">
+              <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight text-[#f7f5f0]">
                 Ready to fix or upgrade your home?
               </h2>
-              <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">
+              <p className="mt-2 text-sm sm:text-base text-[#ebe8df] leading-relaxed">
                 Connect with top-rated local technicians. Fair pricing, guaranteed service, and zero booking fee surprises.
               </p>
             </div>
             <div className="flex items-center gap-3 shrink-0 flex-wrap">
               <Link
                 to="/services"
-                className="inline-flex items-center gap-2 rounded-xl bg-[#FF7A1A] hover:bg-[#EA580C] px-6 py-3.5 text-sm font-bold text-white shadow-md transition active:scale-98"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#b3261e] hover:bg-[#9c2019] px-6 py-3.5 text-sm font-bold text-white shadow-md transition active:scale-98"
               >
                 <span>Book a Service</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
               <Link
                 to="/help"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 px-5 py-3.5 text-sm font-bold text-slate-200 transition"
+                className="inline-flex items-center gap-2 rounded-xl border border-[#383833] bg-[#2b2b28] hover:bg-[#383833] px-5 py-3.5 text-sm font-bold text-[#ebe8df] transition"
               >
                 <span>FAQ & Help</span>
               </Link>
