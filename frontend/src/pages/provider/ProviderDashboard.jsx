@@ -22,6 +22,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import LeafletMap from '../../components/common/LeafletMap';
 import ServiceManager from '../../components/provider/ServiceManager';
+import ProviderRequestDetailModal from '../../components/provider/ProviderRequestDetailModal';
 import { detectCurrentLocation } from '../../utils/locationDetect';
 import toast from 'react-hot-toast';
 
@@ -75,6 +76,7 @@ const ProviderDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [pendingCustomRequests, setPendingCustomRequests] = useState([]);
   const [addServiceModalOpen, setAddServiceModalOpen] = useState(false);
+  const [detailModal, setDetailModal] = useState(null); // { item, type }
 
   // Location state
   const [isEditingLocation, setIsEditingLocation] = useState(false);
@@ -173,7 +175,11 @@ const ProviderDashboard = () => {
     } catch (e) { console.error('Custom requests error', e); }
   };
 
-  useEffect(() => { loadDashboardData(); }, [user]);
+  useEffect(() => {
+    loadDashboardData();
+    const timer = setInterval(loadDashboardData, 15000);
+    return () => clearInterval(timer);
+  }, [user]);
 
   const handleToggleAvailability = async (e) => {
     const newValue = e.target.checked;
@@ -285,10 +291,16 @@ const ProviderDashboard = () => {
       const res = await fetch(`${API}/api/custom-requests/${id}/${action}`, { method: 'POST', credentials: 'include' });
       const data = await res.json();
       if (data.success) {
-        toast.success(action === 'accept' ? 'Custom request accepted!' : 'Request ignored');
+        toast.success(action === 'accept' ? 'Custom request accepted!' : 'Request declined');
+        loadDashboardData();
+      } else {
+        toast.error(data.message || `Failed to ${action} request`);
         loadDashboardData();
       }
-    } catch (e) { loadDashboardData(); }
+    } catch (e) {
+      toast.error(`Failed to ${action} request`);
+      loadDashboardData();
+    }
   };
 
   const isAvailable = user?.openToCustomRequests || false;
@@ -309,6 +321,65 @@ const ProviderDashboard = () => {
 
   return (
     <div className="space-y-6 pb-16">
+      <ProviderRequestDetailModal
+        isOpen={Boolean(detailModal)}
+        onClose={() => setDetailModal(null)}
+        item={detailModal?.item}
+        type={detailModal?.type || 'custom'}
+        onUpdated={(patch) => {
+          setDetailModal((prev) => (prev ? { ...prev, item: { ...prev.item, ...patch } } : null));
+          loadDashboardData();
+        }}
+        actions={
+          detailModal?.type === 'custom' && detailModal.item?.status === 'PENDING' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  handleCustomRequestAction(detailModal.item._id, 'accept');
+                  setDetailModal(null);
+                }}
+                className="bg-[#b3261e] hover:bg-[#9c2019] text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <Check className="w-4 h-4" /> Accept Request
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleCustomRequestAction(detailModal.item._id, 'decline');
+                  setDetailModal(null);
+                }}
+                className="bg-white border border-[#dedad0] text-[#1a1a18] hover:bg-[#ebe8df] px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <X className="w-4 h-4" /> Decline
+              </button>
+            </>
+          ) : detailModal?.type === 'booking' && detailModal.item?.status === 'pending' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  handleAcceptBooking(detailModal.item.id);
+                  setDetailModal(null);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <Check className="w-4 h-4" /> Accept Booking
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleRejectBooking(detailModal.item.id);
+                  setDetailModal(null);
+                }}
+                className="bg-white border border-[#dedad0] text-[#1a1a18] hover:bg-[#ebe8df] px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <X className="w-4 h-4" /> Decline
+              </button>
+            </>
+          ) : null
+        }
+      />
       {user?.verificationStatus === 'pending' && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-2xl flex items-start gap-3 shadow-xs">
           <AlertTriangle className="mt-0.5 text-amber-600 shrink-0 w-5 h-5" />
@@ -552,7 +623,11 @@ const ProviderDashboard = () => {
               </div>
               <div className="space-y-3">
                 {pendingBookings.map((b) => (
-                  <div key={b.id} className="bg-white p-4 rounded-2xl border border-[#dedad0] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div
+                    key={b.id}
+                    onClick={() => setDetailModal({ item: b, type: 'booking' })}
+                    className="bg-white p-4 rounded-2xl border border-[#dedad0] shadow-xs hover:border-[#b3261e]/40 hover:shadow-md cursor-pointer transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
                     <div className="space-y-1 flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="bg-[#ebe8df] text-[#1a1a18] text-[10px] uppercase font-bold px-2 py-0.5 rounded">Booking</span>
@@ -566,7 +641,11 @@ const ProviderDashboard = () => {
                         <span className="font-bold text-emerald-700 font-mono">₹{b.total}</span>
                       </div>
                     </div>
-                    <div className="flex gap-2 self-end sm:self-center shrink-0">
+                    <div className="flex gap-2 self-end sm:self-center shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => setDetailModal({ item: b, type: 'booking' })}
+                        className="bg-[#f7f5f0] border border-[#dedad0] text-[#1a1a18] hover:bg-[#ebe8df] px-3 py-1.5 rounded-xl text-xs font-bold transition">
+                        Details
+                      </button>
                       <button onClick={() => handleAcceptBooking(b.id)}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition">
                         <Check className="w-3.5 h-3.5" /> Accept
@@ -579,10 +658,16 @@ const ProviderDashboard = () => {
                   </div>
                 ))}
                 {pendingCustomRequests.map((r) => (
-                  <div key={r._id} className="bg-white p-4 rounded-2xl border border-[#dedad0] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div
+                    key={r._id}
+                    onClick={() => setDetailModal({ item: r, type: 'custom' })}
+                    className="bg-white p-4 rounded-2xl border border-[#dedad0] shadow-xs hover:border-[#b3261e]/40 hover:shadow-md cursor-pointer transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
                     <div className="space-y-1 flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="bg-[#b3261e]/10 text-[#b3261e] text-[10px] uppercase font-bold px-2 py-0.5 rounded">Custom Request</span>
+                        {r.pincodeMatch && <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded">Same PIN {r.location?.pincode || ''}</span>}
+                        {r.distanceKm !== null && r.distanceKm !== undefined && <span className="bg-sky-50 text-sky-700 text-[10px] font-bold px-2 py-0.5 rounded">{r.distanceKm} km</span>}
                         {r.budget && <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded font-mono">Budget: ₹{r.budget}</span>}
                       </div>
                       <h3 className="font-bold text-[#1a1a18]">{r.serviceTitle || 'Custom Service'}</h3>
@@ -592,7 +677,11 @@ const ProviderDashboard = () => {
                         <span>{r.date} {r.time}</span>
                       </div>
                     </div>
-                    <div className="flex gap-2 self-end sm:self-center shrink-0">
+                    <div className="flex gap-2 self-end sm:self-center shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => setDetailModal({ item: r, type: 'custom' })}
+                        className="bg-[#f7f5f0] border border-[#dedad0] text-[#1a1a18] hover:bg-[#ebe8df] px-3 py-1.5 rounded-xl text-xs font-bold transition">
+                        Details
+                      </button>
                       <button onClick={() => handleCustomRequestAction(r._id, 'accept')}
                         className="bg-[#b3261e] hover:bg-[#9c2019] text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition">
                         <Check className="w-3.5 h-3.5" /> Accept
@@ -625,7 +714,8 @@ const ProviderDashboard = () => {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.04 }}
-                  className="bg-white p-4 rounded-2xl border border-[#dedad0] shadow-xs hover:shadow-md transition"
+                  onClick={() => setDetailModal({ item: b, type: 'booking' })}
+                  className="bg-white p-4 rounded-2xl border border-[#dedad0] shadow-xs hover:border-[#b3261e]/40 hover:shadow-md cursor-pointer transition"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -744,13 +834,44 @@ const ProviderDashboard = () => {
               </h3>
               <Link to="/provider/notifications" className="text-xs font-bold text-[#b3261e] hover:underline">View all</Link>
             </div>
-            <div className="space-y-2 max-h-52 overflow-y-auto no-scrollbar">
-              {notifications.slice(0, 5).length > 0 ? notifications.slice(0, 5).map((n) => (
-                <div key={n._id} className={`p-2.5 rounded-xl text-xs ${!n.read ? 'bg-[#ebe8df] border border-[#dedad0]' : 'bg-[#f7f5f0]'}`}>
-                  <p className="font-bold text-[#1a1a18]">{n.title}</p>
-                  <p className="text-[#6a675f] mt-0.5 line-clamp-2">{n.message}</p>
-                </div>
-              )) : (
+            <div className="space-y-2.5 max-h-72 overflow-y-auto no-scrollbar">
+              {notifications.slice(0, 6).length > 0 ? notifications.slice(0, 6).map((n) => {
+                const reqId = n.relatedId || n.metadata?.requestId;
+                const canRespond = n.type === 'CUSTOM_REQUEST' && n.actionStatus === 'pending' && Boolean(reqId);
+                return (
+                  <div key={n._id} className={`p-3 rounded-xl text-xs ${!n.read ? 'bg-[#ebe8df] border border-[#dedad0]' : 'bg-[#f7f5f0]'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-bold text-[#1a1a18]">{n.title}</p>
+                      {(n.actionStatus === 'accepted' || n.actionStatus === 'declined') && (
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                          n.actionStatus === 'accepted' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {n.actionStatus}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[#6a675f] mt-0.5 line-clamp-2">{n.message}</p>
+                    {canRespond && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCustomRequestAction(reqId, 'accept')}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#b3261e] hover:bg-[#9c2019] text-white text-[11px] font-bold transition"
+                        >
+                          <Check className="w-3 h-3" /> Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCustomRequestAction(reqId, 'decline')}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-[#dedad0] hover:bg-[#f7f5f0] text-[#1a1a18] text-[11px] font-bold transition"
+                        >
+                          <X className="w-3 h-3" /> Decline
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }) : (
                 <p className="text-xs text-[#6a675f] text-center py-3">No notifications.</p>
               )}
             </div>

@@ -20,7 +20,7 @@ import EmptyState from '../../components/common/ui/EmptyState';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const defaultCategories = [
-  'Home Cleaning', 'Plumber', 'Electrician', 'Painting', 'Carpenter', 'Appliance Repair', 'AC Repair', 'Pest Control', 'Salon at Home'
+  'Home Cleaning', 'Plumber', 'Electrician', 'Painting', 'Carpenter', 'Appliance Repair', 'AC Repair', 'Pest Control', 'Salon at Home', 'Pack & Move'
 ];
 
 const Services = () => {

@@ -24,6 +24,11 @@ const Notification = require('./models/Notification');
 const Review = require('./models/Review');
 const { requireAuth, requireRole } = require('./middleware/auth');
 const {
+  sendBookingConfirmationEmail,
+  sendBookingCompletedEmail,
+  sendCustomerBookingsListEmail,
+} = require('./utils/emailService');
+const {
   CATEGORY_ALIASES,
   escapeRegex,
   isValidCoordinate,
@@ -518,7 +523,22 @@ app.post('/api/auth/logout', (req, res) => {
 
 const slugifyCategory = (name) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const ensureServiceCategories = async () => {
-  if (await ServiceCategory.exists({})) return;
+  const existingDocs = await ServiceCategory.find({}).select('slug');
+  if (existingDocs.length > 0) {
+    const existingSlugs = new Set(existingDocs.map((doc) => doc.slug));
+    const missingDefaults = defaultServiceCategories.filter((name) => !existingSlugs.has(slugifyCategory(name)));
+    if (missingDefaults.length > 0) {
+      try {
+        await ServiceCategory.insertMany(
+          missingDefaults.map((name) => ({ name, slug: slugifyCategory(name) })),
+          { ordered: false }
+        );
+      } catch (err) {
+        if (err.code !== 11000 && !err.writeErrors?.every((writeError) => writeError.code === 11000)) throw err;
+      }
+    }
+    return;
+  }
   const legacyCategories = await Service.distinct('category');
   const legacyNames = new Map([
     ['cleaning', 'Home Cleaning'],
@@ -1193,7 +1213,10 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
       serviceCategory: b.serviceCategory || '',
       serviceImage: b.serviceImage || '',
       customerName: b.customerName,
-      customerPhone: b.customerPhone || '',
+      customerPhone: (req.query.mode === 'provider' && b.status === 'pending' && b.phoneRequestStatus !== 'shared')
+        ? ''
+        : (b.customerPhone || ''),
+      phoneRequestStatus: b.phoneRequestStatus || (b.customerPhone ? 'shared' : 'none'),
       providerName: b.providerName,
       providerId: b.provider?._id?.toString() || '',
       customerId: b.customer?._id?.toString() || '',
@@ -1201,9 +1224,21 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
       time: b.time,
       duration: b.duration,
       description: b.description || '',
-      address: b.address?.street
-        ? `${b.address.street}${b.address.city ? ', ' + b.address.city : ''}${b.address.pincode ? ' ' + b.address.pincode : ''}`
-        : 'Address not provided',
+      address: b.address?.formattedAddress
+        || (b.address?.street
+          ? `${b.address.street}${b.address.city ? ', ' + b.address.city : ''}${b.address.pincode ? ' ' + b.address.pincode : ''}`
+          : 'Address not provided'),
+      addressDetails: {
+        formattedAddress: b.address?.formattedAddress || '',
+        street: b.address?.street || '',
+        locality: b.address?.locality || '',
+        city: b.address?.city || '',
+        state: b.address?.state || '',
+        pincode: b.address?.pincode || '',
+        landmark: b.address?.landmark || '',
+        latitude: b.address?.latitude ?? b.serviceLocation?.coordinates?.[1] ?? null,
+        longitude: b.address?.longitude ?? b.serviceLocation?.coordinates?.[0] ?? null,
+      },
       pricingType: b.pricingType || 'fixed',
       visitCharge: b.visitCharge,
       labourCharge: b.labourCharge,
@@ -1221,6 +1256,16 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
       isReviewed: b.isReviewed,
       createdAt: b.createdAt,
     }));
+
+    if (req.user.role !== 'admin' && req.query.mode !== 'provider' && req.query.silent !== '1' && result.length > 0) {
+      const customerEmail = bookings[0]?.customer?.email || req.user.email;
+      const customerName = bookings[0]?.customer?.name || result[0]?.customerName;
+      sendCustomerBookingsListEmail({
+        to: customerEmail,
+        customerName,
+        bookings: result,
+      }).catch((emailErr) => console.error('[Bookings List Email Error]', emailErr.message));
+    }
 
     res.json({ success: true, bookings: result });
   } catch (err) {
@@ -1298,7 +1343,7 @@ app.post('/api/bookings', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'The selected provider does not offer this service.' });
     }
 
-    const customer = await User.findById(req.user.id).select('name phone');
+    const customer = await User.findById(req.user.id).select('name phone email');
     const provider = await User.findById(finalProviderId).select('name role providerStatus verificationStatus');
     if (!isApprovedProvider(provider)) return res.status(404).json({ success: false, message: 'Approved provider not found.' });
 
@@ -1387,6 +1432,12 @@ app.post('/api/bookings', requireAuth, async (req, res) => {
       console.error('[Booking Notification Error]', notifErr.message);
     }
 
+    sendBookingConfirmationEmail({
+      to: customer?.email || req.user.email,
+      customerName: customer?.name || booking.customerName,
+      booking,
+    }).catch((emailErr) => console.error('[Booking Email Error]', emailErr.message));
+
     res.status(201).json({
       success: true,
       booking: {
@@ -1464,6 +1515,22 @@ const handleBookingStatusUpdate = async (req, res) => {
       console.error('[Status Notification Error]', notifErr.message);
     }
 
+    if (status === 'completed') {
+      User.findById(booking.customer)
+        .select('name email')
+        .then((customerUser) => {
+          if (customerUser?.email) {
+            return sendBookingCompletedEmail({
+              to: customerUser.email,
+              customerName: customerUser.name || booking.customerName,
+              booking,
+            });
+          }
+          return null;
+        })
+        .catch((emailErr) => console.error('[Booking Completed Email Error]', emailErr.message));
+    }
+
     res.json({ success: true, booking: { id: booking.bookingId, status: booking.status } });
   } catch (err) {
     console.error('[Update Booking Error]', err.message);
@@ -1473,6 +1540,84 @@ const handleBookingStatusUpdate = async (req, res) => {
 
 app.put('/api/bookings/:id', requireAuth, handleBookingStatusUpdate);
 app.put('/api/bookings/:id/status', requireAuth, handleBookingStatusUpdate);
+
+// Provider requests customer's phone number for a booking
+app.post('/api/bookings/:id/request-phone', requireAuth, requireRole('provider'), async (req, res) => {
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: req.params.id },
+        { _id: isObjectId(req.params.id) ? req.params.id : null },
+      ],
+    });
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    if (booking.provider.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+    if (booking.phoneRequestStatus === 'shared' && booking.customerPhone) {
+      return res.json({ success: true, phoneRequestStatus: 'shared', customerPhone: booking.customerPhone });
+    }
+    booking.phoneRequestStatus = 'requested';
+    await booking.save();
+
+    await Notification.create({
+      userId: booking.customer,
+      title: 'Phone Number Requested',
+      message: `${booking.providerName || 'Your provider'} requested your phone number for booking #${booking.bookingId} (${booking.serviceName}).`,
+      type: 'INFO',
+      link: '/my-bookings',
+    });
+
+    res.json({ success: true, phoneRequestStatus: 'requested' });
+  } catch (err) {
+    console.error('[Booking Request Phone Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to request phone number.' });
+  }
+});
+
+// Customer shares phone number for a booking
+app.post('/api/bookings/:id/share-phone', requireAuth, async (req, res) => {
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: req.params.id },
+        { _id: isObjectId(req.params.id) ? req.params.id : null },
+      ],
+    });
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    if (booking.customer.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const customer = await User.findById(req.user.id).select('name phone');
+    const providedPhone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+    const effectivePhone = providedPhone || publicPhone(customer?.phone) || booking.customerPhone;
+    if (!effectivePhone) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid phone number to share.' });
+    }
+    if (providedPhone && (!customer.phone || customer.phone.startsWith('email_'))) {
+      customer.phone = providedPhone;
+      await customer.save();
+    }
+
+    booking.customerPhone = effectivePhone;
+    booking.phoneRequestStatus = 'shared';
+    await booking.save();
+
+    await Notification.create({
+      userId: booking.provider,
+      title: 'Customer Shared Phone Number',
+      message: `${customer?.name || booking.customerName} shared their contact number for booking #${booking.bookingId}.`,
+      type: 'SUCCESS',
+      link: '/provider/bookings',
+    });
+
+    res.json({ success: true, phoneRequestStatus: 'shared', customerPhone: effectivePhone });
+  } catch (err) {
+    console.error('[Booking Share Phone Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to share phone number.' });
+  }
+});
 
 // Provider submits a quote for inspection-type booking
 app.post('/api/bookings/:id/quote', requireAuth, requireRole('provider'), async (req, res) => {
@@ -1558,6 +1703,21 @@ app.put('/api/bookings/:id/complete-hourly', requireAuth, requireRole('provider'
     booking.finalTotal = booking.visitCharge + labour + booking.materialCharge + Math.round((booking.visitCharge + labour + booking.materialCharge) * 0.03);
     booking.status = 'completed';
     await booking.save();
+
+    User.findById(booking.customer)
+      .select('name email')
+      .then((customerUser) => {
+        if (customerUser?.email) {
+          return sendBookingCompletedEmail({
+            to: customerUser.email,
+            customerName: customerUser.name || booking.customerName,
+            booking,
+          });
+        }
+        return null;
+      })
+      .catch((emailErr) => console.error('[Hourly Completed Email Error]', emailErr.message));
+
     res.json({ success: true, booking: { id: booking.bookingId, status: booking.status, finalTotal: booking.finalTotal, actualHours: booking.actualHours } });
   } catch (err) {
     console.error('[Complete Hourly Error]', err.message);
@@ -1706,26 +1866,144 @@ function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// Helper: resolve valid [longitude, latitude] from provider doc
+function resolveProviderCoords(provider) {
+  const coords = provider?.location?.coordinates;
+  if (
+    Array.isArray(coords)
+    && coords.length === 2
+    && isValidCoordinate(coords[1], coords[0])
+    && (Number(coords[0]) !== 0 || Number(coords[1]) !== 0)
+  ) {
+    return [Number(coords[0]), Number(coords[1])];
+  }
+  if (
+    isValidCoordinate(provider?.address?.latitude, provider?.address?.longitude)
+    && (Number(provider.address.latitude) !== 0 || Number(provider.address.longitude) !== 0)
+  ) {
+    return [Number(provider.address.longitude), Number(provider.address.latitude)];
+  }
+  return null;
+}
+
+// Helper: match a custom request location against a provider via PIN code, coordinates radius, or city/area
+const normalizePin = (pin) => String(pin || '').replace(/\s+/g, '').trim();
+const normalizeLocText = (val) => String(val || '').trim().toLowerCase();
+
+function matchProviderToLocation(targetLoc, provider) {
+  const reqLat = Number(targetLoc?.latitude ?? targetLoc?.coordinates?.[1]);
+  const reqLng = Number(targetLoc?.longitude ?? targetLoc?.coordinates?.[0]);
+  const hasReqCoords = isValidCoordinate(reqLat, reqLng) && (reqLat !== 0 || reqLng !== 0);
+
+  const provCoords = resolveProviderCoords(provider);
+  let distKm = null;
+  if (hasReqCoords && provCoords) {
+    distKm = Math.round(getDistanceFromLatLonInKm(reqLat, reqLng, provCoords[1], provCoords[0]) * 10) / 10;
+  }
+
+  const reqPin = normalizePin(targetLoc?.pincode);
+  const provPin = normalizePin(provider?.address?.pincode);
+  const pincodeMatch = Boolean(reqPin && provPin && reqPin === provPin);
+
+  const maxDistKm = provider?.serviceRadius || 50;
+  const radiusMatch = distKm !== null && distKm <= maxDistKm;
+
+  const reqCity = normalizeLocText(targetLoc?.city);
+  const reqLocality = normalizeLocText(targetLoc?.locality);
+  const provCity = normalizeLocText(provider?.address?.city || provider?.city);
+  const serviceAreas = Array.isArray(provider?.serviceAreas)
+    ? provider.serviceAreas.map(normalizeLocText).filter(Boolean)
+    : [];
+  const areaMatch = Boolean(
+    (!provCoords || !hasReqCoords) && (
+      (reqCity && provCity && reqCity === provCity)
+      || (reqCity && serviceAreas.includes(reqCity))
+      || (reqLocality && serviceAreas.includes(reqLocality))
+    )
+  );
+
+  // If provider has no location or pincode set at all, fall back to true so newly approved providers aren't stranded
+  const hasAnyProviderGeo = Boolean(provCoords || provPin || provCity || serviceAreas.length > 0);
+  const matched = pincodeMatch || radiusMatch || areaMatch || !hasAnyProviderGeo;
+  return { matched, distKm, pincodeMatch, radiusMatch };
+}
+
+// 0. Check nearby online providers count for custom service requests
+app.get('/api/custom-requests/nearby-providers-count', requireAuth, async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const pincode = typeof req.query.pincode === 'string' ? req.query.pincode : '';
+    const city = typeof req.query.city === 'string' ? req.query.city : '';
+    const locality = typeof req.query.locality === 'string' ? req.query.locality : '';
+    if (!isValidCoordinate(lat, lng)) {
+      return res.status(400).json({ success: false, message: 'Valid lat and lng are required.' });
+    }
+
+    const providers = await User.find({
+      _id: { $ne: req.user.id },
+      accountStatus: { $ne: 'suspended' },
+      verificationStatus: { $ne: 'suspended' },
+      $or: [
+        { providerStatus: 'approved' },
+        { role: 'provider', providerStatus: 'not_applied', verificationStatus: 'approved' },
+      ],
+      openToCustomRequests: { $ne: false },
+    }).select('location address city serviceAreas serviceRadius');
+
+    let nearbyCount = 0;
+    for (const provider of providers) {
+      const { matched } = matchProviderToLocation({ latitude: lat, longitude: lng, pincode, city, locality }, provider);
+      if (matched) nearbyCount += 1;
+    }
+
+    res.json({ success: true, nearbyCount });
+  } catch (err) {
+    console.error('[Nearby Custom Providers Count Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to check nearby providers.' });
+  }
+});
+
 // 1. Create a Custom Service Request (Customer)
 app.post('/api/custom-requests', requireAuth, async (req, res) => {
   try {
     if (!['customer', 'provider'].includes(req.user.role)) {
       return res.status(403).json({ success: false, message: 'Only customers can create custom service requests.' });
     }
-    const { photos, budget } = req.body;
-    const serviceTitle = (req.body.serviceTitle || req.body.title || req.body.category || 'Custom Service').trim();
+    const {
+      photos,
+      budget,
+      category = 'Custom',
+      urgency = 'flexible',
+      materialPreference = 'discuss',
+      isProfessionalBrief = false,
+    } = req.body;
+    const serviceTitle = (req.body.serviceTitle || req.body.title || category || 'Custom Service').trim();
     const description = (req.body.description || '').trim();
     const date = req.body.date || req.body.preferredDate;
     const time = req.body.time || '10:00';
 
+    if (!['flexible', 'within_24h', 'urgent'].includes(urgency)) {
+      return res.status(400).json({ success: false, message: 'Invalid urgency value.' });
+    }
+    if (!['discuss', 'provider_brings', 'customer_provides'].includes(materialPreference)) {
+      return res.status(400).json({ success: false, message: 'Invalid material preference.' });
+    }
+
     const rawLoc = req.body.location || req.body.address || {};
-    const locAddress = typeof rawLoc === 'string' ? rawLoc : (rawLoc.address || rawLoc.formattedAddress || 'Haldwani, Uttarakhand');
-    const locLatitude = rawLoc.latitude !== undefined ? Number(rawLoc.latitude) : 29.2183;
-    const locLongitude = rawLoc.longitude !== undefined ? Number(rawLoc.longitude) : 79.5130;
-    const locLocality = rawLoc.locality || '';
-    const locCity = rawLoc.city || 'Haldwani';
-    const locState = rawLoc.state || 'Uttarakhand';
-    const locPincode = rawLoc.pincode || '263139';
+    const locAddress = typeof rawLoc === 'string' ? rawLoc : (rawLoc.address || rawLoc.formattedAddress || '');
+    const locLatitude = rawLoc.latitude !== undefined && rawLoc.latitude !== null && rawLoc.latitude !== ''
+      ? Number(rawLoc.latitude)
+      : (Array.isArray(rawLoc.coordinates) && rawLoc.coordinates.length === 2 ? Number(rawLoc.coordinates[1]) : NaN);
+    const locLongitude = rawLoc.longitude !== undefined && rawLoc.longitude !== null && rawLoc.longitude !== ''
+      ? Number(rawLoc.longitude)
+      : (Array.isArray(rawLoc.coordinates) && rawLoc.coordinates.length === 2 ? Number(rawLoc.coordinates[0]) : NaN);
+    const locLocality = typeof rawLoc === 'object' ? (rawLoc.locality || '') : '';
+    const locCity = typeof rawLoc === 'object' ? (rawLoc.city || '') : '';
+    const locState = typeof rawLoc === 'object' ? (rawLoc.state || '') : '';
+    const locPincode = typeof rawLoc === 'object' ? (rawLoc.pincode || '') : '';
+    const locHouseOrFlat = typeof rawLoc === 'object' ? (rawLoc.houseOrFlat || '') : '';
+    const locLandmark = typeof rawLoc === 'object' ? (rawLoc.landmark || '') : '';
 
     const location = {
       address: locAddress,
@@ -1735,66 +2013,100 @@ app.post('/api/custom-requests', requireAuth, async (req, res) => {
       city: locCity,
       state: locState,
       pincode: locPincode,
+      houseOrFlat: locHouseOrFlat,
+      landmark: locLandmark,
     };
 
-    if (!description || description.length > 2000
+    if (!description || description.length > 3000
       || !isValidCoordinate(location.latitude, location.longitude)
       || typeof location.address !== 'string' || !location.address.trim()
       || !isValidDate(date) || !isValidTime(time)) {
-      return res.status(400).json({ success: false, message: 'Missing required fields.' });
+      return res.status(400).json({ success: false, message: 'Please provide description, valid location, date, and time.' });
     }
     if (!Array.isArray(photos || []) || (photos || []).length > 5
       || (photos || []).some((photo) => typeof photo !== 'string' || photo.length > 2048)) {
       return res.status(400).json({ success: false, message: 'Up to five request photos are allowed.' });
     }
-    if (budget !== undefined && budget !== null && (!Number.isFinite(Number(budget)) || Number(budget) < 0)) {
+    if (budget !== undefined && budget !== null && budget !== '' && (!Number.isFinite(Number(budget)) || Number(budget) < 0)) {
       return res.status(400).json({ success: false, message: 'Budget must be a non-negative number.' });
     }
 
     const request = await CustomServiceRequest.create({
       customerId: req.user.id,
-      serviceTitle, description: description.trim(), photos,
+      serviceTitle,
+      category: String(category || 'Custom').trim() || 'Custom',
+      urgency,
+      materialPreference,
+      isProfessionalBrief: Boolean(isProfessionalBrief),
+      description: description.trim(),
+      photos: photos || [],
       location: {
         type: 'Point',
         coordinates: [Number(location.longitude), Number(location.latitude)],
-        address: location.address,
+        latitude: Number(location.latitude),
+        longitude: Number(location.longitude),
+        address: location.address.trim(),
         locality: location.locality,
         city: location.city,
         state: location.state,
         pincode: location.pincode,
         houseOrFlat: location.houseOrFlat,
-        landmark: location.landmark
+        landmark: location.landmark,
       },
-      date, time, budget: budget === undefined || budget === null ? undefined : Number(budget)
+      date,
+      time,
+      budget: budget === undefined || budget === null || budget === '' ? undefined : Number(budget),
     });
 
-    // Find eligible providers and notify them safely
+    // Find eligible nearby providers and notify them to accept or decline
+    let notifiedCount = 0;
     try {
+      const customerDoc = await User.findById(req.user.id).select('name');
+      const customerName = customerDoc?.name || 'A customer';
+      const areaLabel = location.locality || location.city || location.address.split(',')[0];
+
       const providers = await User.find({
+        _id: { $ne: req.user.id },
+        accountStatus: { $ne: 'suspended' },
+        verificationStatus: { $ne: 'suspended' },
         $or: [
           { providerStatus: 'approved' },
           { role: 'provider', providerStatus: 'not_applied', verificationStatus: 'approved' },
         ],
-        openToCustomRequests: true,
-      });
+        openToCustomRequests: { $ne: false },
+      }).select('location address city serviceAreas serviceRadius');
+
       for (const provider of providers) {
-        let isEligible = true;
-        if (provider.location && provider.location.coordinates && provider.location.coordinates[0] !== 0) {
-          const distKm = getDistanceFromLatLonInKm(
-            location.latitude, location.longitude,
-            provider.location.coordinates[1], provider.location.coordinates[0]
-          );
-          if (distKm > (provider.serviceRadius || 50)) {
-            isEligible = false;
-          }
-        }
-        if (isEligible) {
+        const { matched, distKm, pincodeMatch } = matchProviderToLocation(location, provider);
+        if (matched) {
+          notifiedCount += 1;
+          const matchBadge = pincodeMatch
+            ? `Same PIN${distKm !== null ? ` · ${distKm} km` : ''}`
+            : (distKm !== null ? `${distKm} km away` : '');
           await Notification.create({
             userId: provider._id,
-            title: 'New Custom Request',
-            message: `A new custom request "${serviceTitle || 'Custom Service'}" is available nearby.`,
+            title: `New Custom Request${matchBadge ? ` · ${matchBadge}` : ''}`,
+            message: `${customerName} requested "${serviceTitle || 'Custom Service'}"${areaLabel ? ` near ${areaLabel}` : ''} on ${date} at ${time}. Accept or decline?`,
             type: 'CUSTOM_REQUEST',
-            link: '/provider/custom-requests'
+            link: `/provider/custom-requests?requestId=${request._id}`,
+            relatedId: request._id,
+            actionStatus: 'pending',
+            metadata: {
+              requestId: request._id.toString(),
+              serviceTitle: request.serviceTitle,
+              category: request.category,
+              urgency: request.urgency,
+              address: request.location.address,
+              locality: request.location.locality,
+              city: request.location.city,
+              pincode: request.location.pincode,
+              pincodeMatch,
+              distanceKm: distKm,
+              date: request.date,
+              time: request.time,
+              budget: request.budget ?? null,
+              customerName,
+            },
           });
         }
       }
@@ -1802,21 +2114,37 @@ app.post('/api/custom-requests', requireAuth, async (req, res) => {
       console.error('[Notification Dispatch Warning]', notifErr.message);
     }
 
-    res.status(201).json({ success: true, request });
+    res.status(201).json({ success: true, request, notifiedCount });
   } catch (err) {
     console.error('[Create Custom Request Error]', err.message);
     res.status(500).json({ success: false, message: 'Failed to create request.' });
   }
 });
 
+// Helper: sanitize custom request for provider visibility (hide phone until shared)
+function mapCustomRequestForViewer(reqDoc, isProviderView) {
+  const obj = reqDoc.toObject ? reqDoc.toObject() : { ...reqDoc };
+  const rawPhone = publicPhone(obj.customerId?.phone);
+  const isShared = obj.phoneRequestStatus === 'shared';
+  if (obj.customerId && typeof obj.customerId === 'object') {
+    obj.customerName = obj.customerId.name || 'Customer';
+    if (isProviderView && !isShared) {
+      delete obj.customerId.phone;
+    }
+  }
+  obj.customerPhone = (!isProviderView || isShared) ? rawPhone : '';
+  return obj;
+}
+
 // 2. Get Custom Requests
 app.get('/api/custom-requests', requireAuth, async (req, res) => {
   try {
     let requests = [];
+    const isProviderView = req.user.role !== 'admin' && req.query.mode === 'provider';
     if (req.user.role !== 'admin' && req.query.mode !== 'provider') {
       requests = await CustomServiceRequest.find({ customerId: req.user.id })
-        .populate('acceptedProviders', 'name profileImage')
-        .populate('selectedProviderId', 'name profileImage')
+        .populate('acceptedProviders', 'name profileImage profession experience')
+        .populate('selectedProviderId', 'name profileImage profession experience')
         .populate('quoteId')
         .sort({ createdAt: -1 });
     } else if (req.user.role !== 'admin') {
@@ -1825,30 +2153,21 @@ app.get('/api/custom-requests', requireAuth, async (req, res) => {
         return res.status(403).json({ success: false, message: 'Provider approval is required to view requests.' });
       }
 
-      // Fetch all pending requests not declined by this provider
-      const pendingRaw = provider.openToCustomRequests
-        ? await CustomServiceRequest.find({
-          status: 'PENDING',
-          declinedProviders: { $ne: req.user.id },
-        }).populate('customerId', 'name').sort({ createdAt: -1 })
-        : [];
+      // Fetch all pending requests not declined by this provider and match via PIN code + location radius
+      const pendingRaw = await CustomServiceRequest.find({
+        status: 'PENDING',
+        customerId: { $ne: req.user.id },
+        declinedProviders: { $ne: req.user.id },
+      }).populate('customerId', 'name phone').sort({ createdAt: -1 });
 
-      let filteredPending = pendingRaw;
-
-      // If provider has location coordinates, filter by operating radius (default 50km if radius not specified)
-      if (provider && provider.location && provider.location.coordinates && provider.location.coordinates[0] !== 0) {
-        const provLng = provider.location.coordinates[0];
-        const provLat = provider.location.coordinates[1];
-        const maxDistKm = provider.serviceRadius || 50;
-
-        filteredPending = pendingRaw.filter(r => {
-          if (r.location && r.location.coordinates && r.location.coordinates[0] && r.location.coordinates[1]) {
-            const dist = getDistanceFromLatLonInKm(provLat, provLng, r.location.coordinates[1], r.location.coordinates[0]);
-            return dist <= maxDistKm;
-          }
-          return true; // Include if location format varies
-        });
-      }
+      const matchMetaById = new Map();
+      const filteredPending = pendingRaw.filter((r) => {
+        const match = matchProviderToLocation(r.location, provider);
+        if (match.matched) {
+          matchMetaById.set(r._id.toString(), match);
+        }
+        return match.matched;
+      });
 
       // Fetch requests where provider is accepted or selected
       const myAccepted = await CustomServiceRequest.find({
@@ -1856,13 +2175,13 @@ app.get('/api/custom-requests', requireAuth, async (req, res) => {
           { acceptedProviders: req.user.id },
           { selectedProviderId: req.user.id }
         ]
-      }).populate('customerId', 'name').populate('quoteId').sort({ createdAt: -1 });
+      }).populate('customerId', 'name phone').populate('quoteId').sort({ createdAt: -1 });
 
       requests = [...filteredPending, ...myAccepted];
 
       // Remove duplicates
       const uniqueIds = new Set();
-      requests = requests.filter(r => {
+      requests = requests.filter((r) => {
         const idStr = r._id.toString();
         if (!uniqueIds.has(idStr)) {
           uniqueIds.add(idStr);
@@ -1872,6 +2191,13 @@ app.get('/api/custom-requests', requireAuth, async (req, res) => {
       });
 
       requests.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      requests = requests.map((r) => {
+        const mapped = mapCustomRequestForViewer(r, true);
+        const match = matchMetaById.get(r._id.toString()) || matchProviderToLocation(r.location, provider);
+        mapped.distanceKm = match.distKm;
+        mapped.pincodeMatch = match.pincodeMatch;
+        return mapped;
+      });
     }
 
     res.json({ success: true, requests });
@@ -1881,15 +2207,133 @@ app.get('/api/custom-requests', requireAuth, async (req, res) => {
   }
 });
 
+// 2b. Get Single Custom Request Detail
+app.get('/api/custom-requests/:id', requireAuth, async (req, res) => {
+  try {
+    if (!isObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid request ID.' });
+    }
+    const request = await CustomServiceRequest.findById(req.params.id)
+      .populate('customerId', 'name phone')
+      .populate('acceptedProviders', 'name profileImage profession experience')
+      .populate('selectedProviderId', 'name profileImage profession experience')
+      .populate('quoteId');
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Request not found.' });
+    }
+    const isOwner = (request.customerId?._id || request.customerId).toString() === req.user.id;
+    const isAcceptedOrSelected = request.acceptedProviders.some((p) => (p._id || p).toString() === req.user.id)
+      || (request.selectedProviderId && (request.selectedProviderId._id || request.selectedProviderId).toString() === req.user.id);
+    const isEligibleProvider = req.user.isApprovedProvider && request.status === 'PENDING' && !isOwner;
+    if (!isOwner && !isAcceptedOrSelected && !isEligibleProvider && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this request.' });
+    }
+    res.json({ success: true, request: mapCustomRequestForViewer(request, !isOwner && req.user.role !== 'admin') });
+  } catch (err) {
+    console.error('[Get Custom Request Detail Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch request.' });
+  }
+});
+
+// 2c. Provider requests customer's phone number for a custom request
+app.post('/api/custom-requests/:id/request-phone', requireAuth, requireRole('provider'), async (req, res) => {
+  try {
+    if (!isObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid request ID.' });
+    }
+    const request = await CustomServiceRequest.findById(req.params.id).populate('customerId', 'name phone');
+    if (!request) return res.status(404).json({ success: false, message: 'Request not found.' });
+    if (['CANCELLED', 'EXPIRED'].includes(request.status)) {
+      return res.status(400).json({ success: false, message: 'Request is no longer active.' });
+    }
+
+    if (request.phoneRequestStatus === 'shared') {
+      return res.json({
+        success: true,
+        phoneRequestStatus: 'shared',
+        customerPhone: publicPhone(request.customerId?.phone),
+      });
+    }
+
+    const provider = await User.findById(req.user.id).select('name');
+    request.phoneRequestStatus = 'requested';
+    request.phoneRequestedAt = new Date();
+    await request.save();
+
+    await Notification.create({
+      userId: request.customerId?._id || request.customerId,
+      title: 'Phone Number Requested',
+      message: `${provider?.name || 'A nearby provider'} requested your contact number for "${request.serviceTitle || 'Custom Service'}".`,
+      type: 'INFO',
+      link: `/custom-requests/${request._id}`,
+      relatedId: request._id,
+    });
+
+    res.json({ success: true, phoneRequestStatus: 'requested' });
+  } catch (err) {
+    console.error('[Custom Request Phone Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to request phone number.' });
+  }
+});
+
+// 2d. Customer shares phone number for a custom request
+app.post('/api/custom-requests/:id/share-phone', requireAuth, async (req, res) => {
+  try {
+    if (!isObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid request ID.' });
+    }
+    const request = await CustomServiceRequest.findOne({ _id: req.params.id, customerId: req.user.id });
+    if (!request) return res.status(404).json({ success: false, message: 'Request not found.' });
+
+    const customer = await User.findById(req.user.id).select('name phone');
+    const providedPhone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+    const effectivePhone = providedPhone || publicPhone(customer?.phone);
+    if (!effectivePhone) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid phone number to share.' });
+    }
+    if (providedPhone && (!customer.phone || customer.phone.startsWith('email_'))) {
+      customer.phone = providedPhone;
+      await customer.save();
+    }
+
+    request.phoneRequestStatus = 'shared';
+    request.phoneSharedAt = new Date();
+    await request.save();
+
+    const notifyIds = new Set([
+      ...(request.acceptedProviders || []).map((id) => id.toString()),
+      ...(request.selectedProviderId ? [request.selectedProviderId.toString()] : []),
+    ]);
+    for (const providerId of notifyIds) {
+      await Notification.create({
+        userId: providerId,
+        title: 'Customer Shared Phone Number',
+        message: `${customer?.name || 'Customer'} shared their phone number for "${request.serviceTitle || 'Custom Service'}".`,
+        type: 'SUCCESS',
+        link: '/provider/custom-requests',
+        relatedId: request._id,
+      });
+    }
+
+    res.json({ success: true, phoneRequestStatus: 'shared', customerPhone: effectivePhone });
+  } catch (err) {
+    console.error('[Custom Share Phone Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to share phone number.' });
+  }
+});
+
 // 3. Provider Accepts Request
 app.post('/api/custom-requests/:id/accept', requireAuth, requireRole('provider'), async (req, res) => {
   try {
-    const provider = await User.findById(req.user.id).select('role providerStatus verificationStatus openToCustomRequests');
-    if (!isApprovedProvider(provider) || !provider.openToCustomRequests) {
-      return res.status(403).json({ success: false, message: 'Enable custom requests on an approved provider account to accept requests.' });
+    const provider = await User.findById(req.user.id).select('name role providerStatus verificationStatus openToCustomRequests');
+    if (!isApprovedProvider(provider)) {
+      return res.status(403).json({ success: false, message: 'Approved provider access is required to accept requests.' });
     }
     const request = await CustomServiceRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ success: false, message: 'Request not found.' });
+    if (request.customerId.toString() === req.user.id) {
+      return res.status(400).json({ success: false, message: 'You cannot accept your own request.' });
+    }
     if (request.status !== 'PENDING' || request.declinedProviders.some((id) => id.toString() === req.user.id)) {
       return res.status(400).json({ success: false, message: 'Request not available.' });
     }
@@ -1901,10 +2345,17 @@ app.post('/api/custom-requests/:id/accept', requireAuth, requireRole('provider')
       await Notification.create({
         userId: request.customerId,
         title: 'Provider Accepted Request',
-        message: `A provider has accepted your custom request "${request.serviceTitle || 'Custom Service'}".`,
-        type: 'SUCCESS'
+        message: `${provider.name || 'A nearby provider'} accepted your custom request "${request.serviceTitle || 'Custom Service'}".`,
+        type: 'SUCCESS',
+        link: `/custom-requests/${request._id}`,
+        relatedId: request._id,
       });
     }
+
+    await Notification.updateMany(
+      { userId: req.user.id, relatedId: request._id, type: 'CUSTOM_REQUEST' },
+      { $set: { read: true, actionStatus: 'accepted' } }
+    );
 
     res.json({ success: true, request });
   } catch (err) {
@@ -1917,17 +2368,51 @@ app.post('/api/custom-requests/:id/decline', requireAuth, requireRole('provider'
   try {
     const request = await CustomServiceRequest.findById(req.params.id);
     if (!request) return res.status(404).json({ success: false, message: 'Request not found.' });
-    if (request.status !== 'PENDING') return res.status(400).json({ success: false, message: 'Request is no longer available.' });
+    if (request.status !== 'PENDING') {
+      await Notification.updateMany(
+        { userId: req.user.id, relatedId: request._id, type: 'CUSTOM_REQUEST' },
+        { $set: { read: true, actionStatus: 'declined' } }
+      );
+      return res.status(400).json({ success: false, message: 'Request is no longer available.' });
+    }
 
-    if (!request.declinedProviders.includes(req.user.id)) {
+    if (!request.declinedProviders.some((id) => id.toString() === req.user.id)) {
       request.declinedProviders.push(req.user.id);
-      request.acceptedProviders = request.acceptedProviders.filter(id => id.toString() !== req.user.id);
+      request.acceptedProviders = request.acceptedProviders.filter((id) => id.toString() !== req.user.id);
       await request.save();
     }
+
+    await Notification.updateMany(
+      { userId: req.user.id, relatedId: request._id, type: 'CUSTOM_REQUEST' },
+      { $set: { read: true, actionStatus: 'declined' } }
+    );
 
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to decline request.' });
+  }
+});
+
+// 4b. Customer Cancels Custom Request
+app.post('/api/custom-requests/:id/cancel', requireAuth, async (req, res) => {
+  try {
+    if (!isObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid request ID.' });
+    }
+    const request = await CustomServiceRequest.findOne({ _id: req.params.id, customerId: req.user.id });
+    if (!request) return res.status(404).json({ success: false, message: 'Request not found.' });
+    if (!['PENDING', 'PROVIDER_SELECTED'].includes(request.status)) {
+      return res.status(400).json({ success: false, message: 'This request cannot be cancelled anymore.' });
+    }
+    request.status = 'CANCELLED';
+    await request.save();
+    await Notification.updateMany(
+      { relatedId: request._id, type: 'CUSTOM_REQUEST', actionStatus: 'pending' },
+      { $set: { read: true } }
+    );
+    res.json({ success: true, request });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to cancel request.' });
   }
 });
 
@@ -1956,8 +2441,15 @@ app.post('/api/custom-requests/:id/select-provider', requireAuth, async (req, re
       userId: providerId,
       title: 'You were selected!',
       message: `Customer selected you for the request "${request.serviceTitle || 'Custom Service'}". Please send a quote.`,
-      type: 'SUCCESS'
+      type: 'SUCCESS',
+      link: '/provider/custom-requests',
+      relatedId: request._id,
     });
+
+    await Notification.updateMany(
+      { relatedId: request._id, type: 'CUSTOM_REQUEST', actionStatus: 'pending' },
+      { $set: { read: true } }
+    );
 
     res.json({ success: true, request });
   } catch (err) {
@@ -2000,8 +2492,10 @@ app.post('/api/custom-requests/:id/quote', requireAuth, requireRole('provider'),
     await Notification.create({
       userId: request.customerId,
       title: 'Quote Received',
-      message: `You received a quote of ₹${totalAmount} for your custom request.`,
-      type: 'INFO'
+      message: `You received a quote of ₹${totalAmount} for "${request.serviceTitle || 'Custom Service'}".`,
+      type: 'INFO',
+      link: `/custom-requests/${request._id}`,
+      relatedId: request._id,
     });
 
     res.json({ success: true, quote, request });
@@ -2043,7 +2537,7 @@ app.post('/api/custom-requests/:id/quote-response', requireAuth, async (req, res
         return res.status(409).json({ success: false, message: 'Provider is already booked for this exact date and time. Please coordinate a new time.' });
       }
 
-      const customer = await User.findById(req.user.id).select('name');
+      const customer = await User.findById(req.user.id).select('name email');
 
       // Create Booking
       const booking = await Booking.create({
@@ -2081,6 +2575,12 @@ app.post('/api/custom-requests/:id/quote-response', requireAuth, async (req, res
         message: `Customer accepted your quote for ₹${quote.totalAmount} and confirmed the booking.`,
         type: 'SUCCESS'
       });
+
+      sendBookingConfirmationEmail({
+        to: customer?.email || req.user.email,
+        customerName: customer?.name || booking.customerName,
+        booking,
+      }).catch((emailErr) => console.error('[Custom Booking Email Error]', emailErr.message));
 
       res.json({ success: true, booking, request });
     } else {
@@ -2399,6 +2899,9 @@ app.put('/api/admin/providers/:id/status', requireAuth, requireRole('admin'), as
       provider.providerStatus = 'approved';
       provider.accountStatus = 'active';
       provider.providerRejectionReason = undefined;
+      if (provider.openToCustomRequests === undefined || provider.openToCustomRequests === false) {
+        provider.openToCustomRequests = true;
+      }
     } else if (status === 'suspended') {
       provider.accountStatus = 'suspended';
     } else {

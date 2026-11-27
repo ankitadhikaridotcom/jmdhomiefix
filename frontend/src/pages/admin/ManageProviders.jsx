@@ -93,6 +93,7 @@ const ManageProviders = () => {
           <option value="Cleaning">Cleaning</option>
           <option value="AC Service">AC Service</option>
           <option value="Carpenter">Carpenter</option>
+          <option value="Pack & Move">Pack & Move</option>
         </select>
       </div>
 

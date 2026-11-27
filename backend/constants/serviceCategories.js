@@ -8,4 +8,5 @@ module.exports = [
   'Appliance Repair',
   'Pest Control',
   'Salon at Home',
+  'Pack & Move',
 ];

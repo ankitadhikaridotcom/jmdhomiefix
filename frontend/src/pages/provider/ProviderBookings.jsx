@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaCheck, FaTimes, FaPlay, FaCheckDouble, FaFileInvoiceDollar } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaCheck, FaTimes, FaPlay, FaCheckDouble, FaFileInvoiceDollar, FaEye } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { EmptyState } from '../../components/common/LoadingSpinner';
+import ProviderRequestDetailModal from '../../components/provider/ProviderRequestDetailModal';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const tabs = ['all', 'pending', 'upcoming', 'ongoing', 'completed', 'cancelled'];
 
 const statusColors = {
@@ -20,6 +22,7 @@ const statusColors = {
 const ProviderBookings = () => {
   const [activeTab, setActiveTab] = useState('all');
   const [bookingList, setBookingList] = useState([]);
+  const [selectedBooking, setSelectedBooking] = useState(null);
   
   // States for forms
   const [quoteForm, setQuoteForm] = useState(null); // { id: bookingId }
@@ -31,7 +34,7 @@ const ProviderBookings = () => {
   useEffect(() => {
     const loadBookings = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/bookings?mode=provider', { credentials: 'include' });
+        const res = await fetch(`${API}/api/bookings?mode=provider`, { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
           setBookingList(data.bookings);
@@ -114,9 +117,46 @@ const ProviderBookings = () => {
 
   return (
     <div className="space-y-6 pb-20">
+      <ProviderRequestDetailModal
+        isOpen={Boolean(selectedBooking)}
+        onClose={() => setSelectedBooking(null)}
+        item={selectedBooking}
+        type="booking"
+        onUpdated={(patch) => {
+          setSelectedBooking((prev) => (prev ? { ...prev, ...patch } : null));
+          setBookingList((prev) => prev.map((b) => (b.id === selectedBooking?.id ? { ...b, ...patch } : b)));
+        }}
+        actions={
+          selectedBooking && (selectedBooking.status === 'pending' || selectedBooking.status === 'upcoming') ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  handleStatusUpdate(selectedBooking.id, 'confirmed');
+                  setSelectedBooking(null);
+                }}
+                className="text-xs font-bold text-white px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl transition flex items-center gap-1.5"
+              >
+                <FaCheck className="text-xs" /> Accept Booking
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleStatusUpdate(selectedBooking.id, 'cancelled');
+                  setSelectedBooking(null);
+                }}
+                className="text-xs font-bold text-red-600 px-4 py-2.5 border border-red-200 bg-white rounded-xl hover:bg-red-50 transition flex items-center gap-1.5"
+              >
+                <FaTimes className="text-xs" /> Decline
+              </button>
+            </>
+          ) : null
+        }
+      />
+
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900">My Bookings</h1>
-        <p className="text-gray-500 text-sm mt-1">Manage and track your service jobs</p>
+        <p className="text-gray-500 text-sm mt-1">Click any booking to view full address, maps, billing, and contact options</p>
       </motion.div>
 
       {/* Tabs */}
@@ -134,7 +174,9 @@ const ProviderBookings = () => {
         {filtered.length > 0 ? (
           filtered.map((booking, i) => (
             <motion.div key={booking.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }} className="card p-5 hover:shadow-md transition-shadow">
+              transition={{ delay: i * 0.05 }}
+              onClick={() => setSelectedBooking(booking)}
+              className="card p-5 hover:shadow-md transition-shadow cursor-pointer">
               <div className="flex flex-col sm:flex-row sm:items-start gap-4">
                 <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center text-xl flex-shrink-0">🔧</div>
                 
@@ -225,7 +267,8 @@ const ProviderBookings = () => {
                     <span className="text-xs text-gray-400 ml-2">•</span>
                     <span className="text-sm text-gray-500 ml-2">{booking.paymentMethod}</span>
 
-                    <div className="flex flex-wrap gap-2 ml-auto">
+                    <div className="flex flex-wrap gap-2 ml-auto" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => setSelectedBooking(booking)} className="text-xs font-bold text-gray-700 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center gap-1"><FaEye className="text-xs" /> View Details</button>
                       {(booking.status === 'pending' || booking.status === 'upcoming') && (
                         <>
                           <button onClick={() => handleStatusUpdate(booking.id, 'confirmed')} className="text-sm font-semibold text-white px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors flex items-center gap-1"><FaCheck className="text-xs" /> Accept</button>

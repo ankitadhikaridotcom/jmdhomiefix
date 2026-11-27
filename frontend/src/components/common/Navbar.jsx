@@ -20,8 +20,11 @@ import {
   CheckCheck,
   ArrowRight,
   ShieldCheck,
-  Info
+  Info,
+  PlusCircle,
+  Check
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { getDefaultRouteForUser, isApprovedProviderUser } from '../../utils/authRedirect';
 import BrandLogo from './BrandLogo';
@@ -54,6 +57,7 @@ const Navbar = () => {
     'Painting',
     'Pest Control',
     'Salon at Home',
+    'Pack & Move',
   ];
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -84,20 +88,25 @@ const Navbar = () => {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      const fetchNotifications = async () => {
-        try {
-          const res = await fetch('http://localhost:5000/api/notifications', { credentials: 'include' });
-          const data = await res.json();
-          if (data.success) {
-            setNotifications(data.notifications || []);
-          }
-        } catch (e) {
-          console.error('Failed to fetch notifications', e);
-        }
-      };
-      fetchNotifications();
+    if (!isAuthenticated) {
+      setNotifications([]);
+      return undefined;
     }
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const fetchNotifications = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/notifications`, { credentials: 'include' });
+        const data = await res.json();
+        if (data.success) {
+          setNotifications(data.notifications || []);
+        }
+      } catch (e) {
+        console.error('Failed to fetch notifications', e);
+      }
+    };
+    fetchNotifications();
+    const timer = setInterval(fetchNotifications, 15000);
+    return () => clearInterval(timer);
   }, [isAuthenticated, location.pathname]);
 
   useEffect(() => {
@@ -149,6 +158,32 @@ const Navbar = () => {
     }
   };
 
+  const handleCustomRequestNotifAction = async (e, notif, action) => {
+    e.stopPropagation();
+    const reqId = notif.relatedId || notif.metadata?.requestId;
+    if (!reqId) return;
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    try {
+      const res = await fetch(`${apiBase}/api/custom-requests/${reqId}/${action}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(action === 'accept' ? 'Custom request accepted!' : 'Custom request declined');
+        setNotifications((prev) => prev.map((item) => (
+          (item._id || item.id) === (notif._id || notif.id)
+            ? { ...item, read: true, actionStatus: action === 'accept' ? 'accepted' : 'declined' }
+            : item
+        )));
+      } else {
+        toast.error(data.message || `Failed to ${action} request`);
+      }
+    } catch {
+      toast.error(`Failed to ${action} request`);
+    }
+  };
+
   const isAdminOrProvider = user?.role === 'admin' || user?.role === 'provider';
   const isOnDashboardRoute = location.pathname.startsWith('/provider') || location.pathname.startsWith('/admin');
   if (loading) return isHome ? null : <div className="h-16 md:h-18" />;
@@ -182,6 +217,13 @@ const Navbar = () => {
                   className="px-4 py-1.5 rounded-full text-sm font-medium text-[#ebe8df] hover:text-[#f7f5f0] hover:bg-[#f7f5f0]/10 transition-colors"
                 >
                   Services
+                </Link>
+                <Link
+                  to="/request-custom-service"
+                  className="px-4 py-1.5 rounded-full text-sm font-medium text-[#ebe8df] hover:text-[#f7f5f0] hover:bg-[#f7f5f0]/10 transition-colors inline-flex items-center gap-1"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-[#b3261e]" />
+                  <span>Custom Service</span>
                 </Link>
                 <Link
                   to="/about"
@@ -250,6 +292,15 @@ const Navbar = () => {
                   }`}
                 >
                   Services
+                </Link>
+                <Link
+                  to="/request-custom-service"
+                  className={`text-sm font-semibold transition-colors duration-150 inline-flex items-center gap-1 ${
+                    location.pathname === '/request-custom-service' ? 'text-[#b3261e]' : 'text-[#6a675f] hover:text-[#1a1a18]'
+                  }`}
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-[#b3261e]" />
+                  <span>Custom Service</span>
                 </Link>
                 <Link
                   to="/about"
@@ -452,7 +503,32 @@ const Navbar = () => {
                                     <p className={`text-xs md:text-sm ${!n.read ? 'font-bold text-slate-900' : 'text-slate-600'}`}>
                                       {n.message}
                                     </p>
-                                    <p className="text-[11px] text-slate-400 mt-1">{n.time || 'Recently'}</p>
+                                    {providerApproved && n.type === 'CUSTOM_REQUEST' && n.actionStatus === 'pending' && (n.relatedId || n.metadata?.requestId) && (
+                                      <div className="flex items-center gap-2 mt-2">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleCustomRequestNotifAction(e, n, 'accept')}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#b3261e] hover:bg-[#9c2019] text-white text-[11px] font-bold transition"
+                                        >
+                                          <Check className="w-3 h-3" /> Accept
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleCustomRequestNotifAction(e, n, 'decline')}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold transition"
+                                        >
+                                          <X className="w-3 h-3" /> Decline
+                                        </button>
+                                      </div>
+                                    )}
+                                    {n.type === 'CUSTOM_REQUEST' && (n.actionStatus === 'accepted' || n.actionStatus === 'declined') && (
+                                      <span className={`inline-block mt-1.5 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                        n.actionStatus === 'accepted' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                      }`}>
+                                        {n.actionStatus}
+                                      </span>
+                                    )}
+                                    <p className="text-[11px] text-slate-400 mt-1">{n.time || (n.createdAt ? new Date(n.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Recently')}</p>
                                   </div>
                                   {!n.read && <span className="w-2 h-2 bg-[#0EA5E9] rounded-full shrink-0 mt-1.5" />}
                                 </div>
@@ -708,6 +784,10 @@ const Navbar = () => {
                       <Search className="w-4 h-4 text-slate-400" />
                       <span>All Services</span>
                     </Link>
+                    <Link to="/request-custom-service" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#b3261e] bg-[#b3261e]/5 hover:bg-[#b3261e]/10 text-sm font-semibold">
+                      <PlusCircle className="w-4 h-4 text-[#b3261e]" />
+                      <span>Request Custom Service</span>
+                    </Link>
                     <Link to="/about" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                       <Info className="w-4 h-4 text-slate-400" />
                       <span>About Us</span>
@@ -765,6 +845,10 @@ const Navbar = () => {
                       <Search className="w-4 h-4 text-slate-400" />
                       <span>All Services</span>
                     </Link>
+                    <Link to="/request-custom-service" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#b3261e] bg-[#b3261e]/5 hover:bg-[#b3261e]/10 text-sm font-semibold">
+                      <PlusCircle className="w-4 h-4 text-[#b3261e]" />
+                      <span>Request Custom Service</span>
+                    </Link>
                     <Link to="/about" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                       <Info className="w-4 h-4 text-slate-400" />
                       <span>About Us</span>
@@ -796,6 +880,7 @@ const Navbar = () => {
             {[
               { to: '/', icon: HomeIcon, label: 'Home' },
               { to: '/services', icon: Search, label: 'Services' },
+              { to: '/request-custom-service', icon: PlusCircle, label: 'Custom' },
               { to: '/my-bookings', icon: ClipboardList, label: 'Bookings' },
               { to: '/profile', icon: User, label: 'Profile' },
             ].map((item) => {

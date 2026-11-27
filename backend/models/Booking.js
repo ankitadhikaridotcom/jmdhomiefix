@@ -88,6 +88,11 @@ const bookingSchema = new mongoose.Schema({
   },
 
   isReviewed: { type: Boolean, default: false },
+  phoneRequestStatus: {
+    type: String,
+    enum: ['none', 'requested', 'shared'],
+    default: 'none',
+  },
 
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },

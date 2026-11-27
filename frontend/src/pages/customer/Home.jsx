@@ -22,7 +22,10 @@ import {
   Award,
   ChevronRight,
   PhoneCall,
-  CalendarCheck
+  CalendarCheck,
+  PlusCircle,
+  BellRing,
+  Truck
 } from 'lucide-react';
 import ServiceCard from '../../components/customer/ServiceCard';
 import BookingCard from '../../components/customer/BookingCard';
@@ -42,6 +45,7 @@ const categoryIcons = {
   'Appliance Repair': Wrench,
   'Pest Control': ShieldAlert,
   'Salon at Home': Scissors,
+  'Pack & Move': Truck,
 };
 
 const categoryBadgeStyles = {
@@ -54,6 +58,7 @@ const categoryBadgeStyles = {
   'Appliance Repair': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
   'Pest Control': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
   'Salon at Home': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
+  'Pack & Move': 'bg-[#f7f5f0] text-[#b3261e] border-[#dedad0]',
 };
 
 // Icon background colors per category (matching screenshot design)
@@ -67,6 +72,7 @@ const categoryIconBg = {
   Painting: 'bg-teal-50 text-teal-600',
   'Pest Control': 'bg-slate-100 text-slate-600',
   'Salon at Home': 'bg-emerald-50 text-emerald-500',
+  'Pack & Move': 'bg-indigo-50 text-indigo-600',
 };
 
 // Category metadata for the new "Popular Home Services" cards
@@ -115,6 +121,11 @@ const categoryMeta = {
     description: 'Spa, haircuts, hygiene grooming',
     startsAt: 249,
     badge: null,
+  },
+  'Pack & Move': {
+    description: 'Mini trucks, packing, home & office shifting',
+    startsAt: 1499,
+    badge: { text: 'Truck & Crew', color: 'bg-indigo-100 text-indigo-700' },
   },
 };
 
@@ -248,7 +259,7 @@ const Home = () => {
       setRecentBookings([]);
       return;
     }
-    fetch(`${API}/api/bookings`, { credentials: 'include' })
+    fetch(`${API}/api/bookings?silent=1`, { credentials: 'include' })
       .then((response) => response.json())
       .then((data) => {
         if (data.success) setRecentBookings((data.bookings || []).slice(0, 2));
@@ -489,6 +500,27 @@ const Home = () => {
                 </AnimatePresence>
               </div>
 
+              {/* Custom Service Quick Entry (Hero) */}
+              <div className="mt-4 flex flex-wrap items-center gap-2.5 text-xs sm:text-sm">
+                <span className="text-[#ebe8df]/80">Can&apos;t find your exact job?</span>
+                <Link
+                  to="/request-custom-service"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[#f7f5f0]/30 bg-[#f7f5f0]/15 hover:bg-[#b3261e] hover:border-[#b3261e] px-3.5 py-1.5 text-xs font-bold text-[#f7f5f0] backdrop-blur-md transition-all"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Request Custom Service</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+                {user && user.role !== 'admin' && (
+                  <Link
+                    to="/my-custom-requests"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#ebe8df] hover:text-white underline underline-offset-4"
+                  >
+                    <span>My Requests</span>
+                  </Link>
+                )}
+              </div>
+
               {/* Micro Guarantees */}
               <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2.5 text-xs sm:text-sm text-[#ebe8df]/85">
                 <span className="inline-flex items-center gap-1.5 font-medium">
@@ -695,6 +727,63 @@ const Home = () => {
               </div>
             </div>
           )}
+        </div>
+      </section>
+
+      {/* Custom Service Request Feature Banner (Below Recommended Services) */}
+      <section className="py-12 sm:py-16 bg-[#f7f5f0] border-t border-[#dedad0]">
+        <div className="w-[92%] sm:w-[88%] lg:w-[80%] mx-auto">
+          <div className="rounded-3xl bg-white border border-[#dedad0] p-6 sm:p-10 shadow-sm relative overflow-hidden">
+            <div className="absolute -right-16 -top-16 w-64 h-64 bg-[#b3261e]/8 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 grid lg:grid-cols-12 gap-8 items-center">
+              <div className="lg:col-span-7 space-y-4">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#b3261e]/10 border border-[#b3261e]/20 text-[11px] font-bold uppercase tracking-wider text-[#b3261e]">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Custom Service Request</span>
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1a1a18] tracking-tight">
+                  Have a unique repair or custom project in mind?
+                </h2>
+                <p className="text-sm sm:text-base text-[#6a675f] leading-relaxed">
+                  Post a custom service request with a structured professional brief, photos, preferred schedule, and live location. Nearby verified service providers are notified immediately and can accept or decline your request.
+                </p>
+                <div className="grid sm:grid-cols-3 gap-3 pt-2">
+                  {[
+                    { icon: Sparkles, title: 'Professional Brief', desc: 'Auto-format your request cleanly' },
+                    { icon: MapPin, title: 'Location On', desc: 'Pin exact GPS or saved address' },
+                    { icon: BellRing, title: 'Nearby Alerts', desc: 'Local pros accept & send quotes' },
+                  ].map((item) => {
+                    const ItemIcon = item.icon;
+                    return (
+                      <div key={item.title} className="rounded-2xl bg-[#f7f5f0] border border-[#e5e2db] p-3.5">
+                        <div className="w-8 h-8 rounded-lg bg-[#b3261e]/10 text-[#b3261e] flex items-center justify-center mb-2">
+                          <ItemIcon className="w-4 h-4" />
+                        </div>
+                        <p className="text-xs font-bold text-[#1a1a18]">{item.title}</p>
+                        <p className="text-[11px] text-[#6a675f] mt-0.5">{item.desc}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="lg:col-span-5 flex flex-col sm:flex-row lg:flex-col gap-3 lg:items-end justify-center">
+                <Link
+                  to="/request-custom-service"
+                  className="w-full lg:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#b3261e] hover:bg-[#9c2019] px-6 py-4 text-sm font-bold text-white shadow-md transition active:scale-98"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Add Custom Service Request</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/my-custom-requests"
+                  className="w-full lg:w-auto inline-flex items-center justify-center gap-2 rounded-2xl border border-[#dedad0] bg-[#f7f5f0] hover:bg-[#ebe8df] px-6 py-3.5 text-sm font-bold text-[#1a1a18] transition"
+                >
+                  <span>View My Custom Requests</span>
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

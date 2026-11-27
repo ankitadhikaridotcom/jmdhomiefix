@@ -66,7 +66,7 @@ const userSchema = new mongoose.Schema({
     unavailableDates: [{ type: String }] // e.g., '2026-08-20'
   },
   // Provider Settings for Custom Requests
-  openToCustomRequests: { type: Boolean, default: false },
+  openToCustomRequests: { type: Boolean, default: true },
   serviceRadius: { type: Number, default: 10 }, // in km
   // Provider Extended Profile
   profession: { type: String },

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, Clock, MapPin, Receipt, Check, X, Wrench, ShieldCheck } from 'lucide-react';
+import { Calendar, Clock, MapPin, Receipt, Check, X, Wrench, ShieldCheck, PhoneCall } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const statusBadgeStyles = {
@@ -27,6 +27,31 @@ const statusLabels = {
 
 const BookingCard = ({ booking, index = 0, onCancel, onReview, onQuoteResponse }) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [phoneShared, setPhoneShared] = useState(booking.phoneRequestStatus === 'shared');
+  const [phoneRequested, setPhoneRequested] = useState(booking.phoneRequestStatus === 'requested');
+  const [phoneInput, setPhoneInput] = useState('');
+
+  const handleSharePhone = async () => {
+    setIsProcessing(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${apiBase}/api/bookings/${booking.id || booking._id}/share-phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(phoneInput.trim() ? { phone: phoneInput.trim() } : {}),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+      setPhoneShared(true);
+      setPhoneRequested(false);
+      toast.success('Phone number shared with provider!');
+    } catch (err) {
+      toast.error(err.message || 'Failed to share phone number');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const addressText = typeof booking.address === 'string'
     ? booking.address.split(',')[0]
@@ -116,6 +141,33 @@ const BookingCard = ({ booking, index = 0, onCancel, onReview, onQuoteResponse }
           </div>
 
           {/* Quote Section for Customers */}
+          {phoneRequested && !phoneShared && (
+            <div className="mt-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-amber-900 font-semibold">
+                <PhoneCall className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Provider requested your phone number for this booking.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {!booking.customerPhone && (
+                  <input
+                    type="tel"
+                    value={phoneInput}
+                    onChange={(e) => setPhoneInput(e.target.value)}
+                    placeholder="Phone number"
+                    className="px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs text-slate-900 outline-none w-32"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={handleSharePhone}
+                  disabled={isProcessing}
+                  className="px-3 py-1.5 rounded-lg bg-[#b3261e] hover:bg-[#9c2019] text-white text-xs font-bold transition"
+                >
+                  Share Phone
+                </button>
+              </div>
+            </div>
+          )}
           <AnimatePresence>
             {booking.status === 'quote_sent' && booking.quote && (
               <motion.div

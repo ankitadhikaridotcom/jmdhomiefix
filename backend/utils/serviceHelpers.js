@@ -8,6 +8,7 @@ const DEFAULT_CATEGORY_IMAGES = {
   Painting: 'https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=800&auto=format&fit=crop',
   'Pest Control': 'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?w=800&auto=format&fit=crop',
   'Salon at Home': 'https://images.unsplash.com/photo-1560750588-73207b1ef5b8?w=800&auto=format&fit=crop',
+  'Pack & Move': 'https://images.unsplash.com/photo-1600518464441-9154a4dea21b?w=800&auto=format&fit=crop',
 };
 
 const FALLBACK_SERVICE_IMAGE = '/deep-home-cleaning.jpg';
@@ -36,6 +37,14 @@ const CATEGORY_ALIASES = {
   salon: 'Salon at Home',
   'ac repair': 'AC Repair',
   ac: 'AC Repair',
+  'pack & move': 'Pack & Move',
+  'pack and move': 'Pack & Move',
+  packers: 'Pack & Move',
+  movers: 'Pack & Move',
+  moving: 'Pack & Move',
+  relocation: 'Pack & Move',
+  shifting: 'Pack & Move',
+  truck: 'Pack & Move',
 };
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -243,6 +252,9 @@ function buildServiceSearchClauses(rawSearch) {
   }
   if (/cooling|filter|gas|compressor/i.test(cleanSearch)) {
     orClauses.push({ category: new RegExp('^(AC Repair|Appliance Repair)$', 'i') });
+  }
+  if (/pack|move|mover|shift|relocat|truck|tempo|luggage|carton/i.test(cleanSearch)) {
+    orClauses.push({ category: new RegExp('^Pack & Move$', 'i') });
   }
 
   return orClauses;

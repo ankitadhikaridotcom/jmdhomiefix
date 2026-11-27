@@ -6,10 +6,18 @@ const notificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   type: { type: String, default: 'INFO' }, // INFO, SUCCESS, WARNING, ERROR, CUSTOM_REQUEST
   link: { type: String }, // Optional frontend route to redirect to when clicked
+  relatedId: { type: mongoose.Schema.Types.ObjectId }, // Optional related entity (e.g. CustomServiceRequest)
+  actionStatus: {
+    type: String,
+    enum: ['none', 'pending', 'accepted', 'declined'],
+    default: 'none',
+  },
+  metadata: { type: mongoose.Schema.Types.Mixed },
   read: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 
 notificationSchema.index({ userId: 1, read: 1, createdAt: -1 });
+notificationSchema.index({ userId: 1, relatedId: 1 });
 
 module.exports = mongoose.model('Notification', notificationSchema);

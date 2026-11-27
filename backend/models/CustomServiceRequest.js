@@ -3,6 +3,18 @@ const mongoose = require('mongoose');
 const customServiceRequestSchema = new mongoose.Schema({
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   serviceTitle: { type: String, default: 'Custom Service' },
+  category: { type: String, default: 'Custom', trim: true },
+  urgency: {
+    type: String,
+    enum: ['flexible', 'within_24h', 'urgent'],
+    default: 'flexible'
+  },
+  materialPreference: {
+    type: String,
+    enum: ['discuss', 'provider_brings', 'customer_provides'],
+    default: 'discuss'
+  },
+  isProfessionalBrief: { type: Boolean, default: false },
   description: { type: String, required: true },
   photos: [{ type: String }],
   
@@ -50,6 +62,14 @@ const customServiceRequestSchema = new mongoose.Schema({
   // References to subsequent documents
   quoteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quote' },
   bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' },
+
+  phoneRequestStatus: {
+    type: String,
+    enum: ['none', 'requested', 'shared'],
+    default: 'none',
+  },
+  phoneRequestedAt: { type: Date },
+  phoneSharedAt: { type: Date },
 
   expiresAt: { type: Date }, // Optional: e.g. 24 hours from creation
   createdAt: { type: Date, default: Date.now },

@@ -22,6 +22,7 @@ const BookingRequestCard = ({ booking, index = 0, onAccept, onReject }) => {
     Painter: '🎨',
     'Appliance Repair': '🔨',
     'Pest Control': '🐛',
+    'Pack & Move': '🚚',
   };
 
   return (
