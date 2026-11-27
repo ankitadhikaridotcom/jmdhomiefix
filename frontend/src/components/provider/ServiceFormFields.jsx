@@ -6,6 +6,7 @@ import {
 } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import LeafletMap from '../common/LeafletMap';
+import { detectCurrentLocation, reverseGeocodeCoordinates } from '../../utils/locationDetect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -116,6 +117,7 @@ export const validateServiceForm = (formData) => {
 export const ServiceFormFields = ({ formData, setFormData, categories = [], user = null, compact = false }) => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [gpsNotice, setGpsNotice] = useState('');
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -228,60 +230,53 @@ export const ServiceFormFields = ({ formData, setFormData, categories = [], user
   };
 
   const reverseGeocodeAndFill = async (latitude, longitude, toastId = null) => {
-    try {
-      const res = await fetch(`${API}/api/location/reverse-geocode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ latitude, longitude }),
-      });
-      const loc = await res.json();
-      if (loc.success) {
-        setFormData((prev) => ({
-          ...prev,
-          latitude: Number(latitude),
-          longitude: Number(longitude),
-          city: loc.city || loc.locality || prev.city,
-          state: loc.state || prev.state,
-          locality: loc.locality || prev.locality,
-          pincode: loc.pincode || prev.pincode,
-          formattedAddress: loc.formattedAddress || prev.formattedAddress,
-          street: prev.street || loc.locality || '',
-        }));
-        if (toastId) toast.success(`Pinned: ${loc.city || loc.locality || 'Location updated'}`, { id: toastId });
-        return;
-      }
-    } catch (err) {
-      console.error('[Service Reverse Geocode Error]', err);
+    const loc = await reverseGeocodeCoordinates(API, latitude, longitude);
+    if (loc.pincode) lastLookedUpPinRef.current = loc.pincode;
+    setFormData((prev) => ({
+      ...prev,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      city: loc.city || loc.locality || prev.city,
+      state: loc.state || prev.state,
+      locality: loc.locality || prev.locality,
+      pincode: loc.pincode || prev.pincode,
+      formattedAddress: loc.formattedAddress || prev.formattedAddress,
+      street: prev.street || loc.locality || '',
+    }));
+    if (toastId) {
+      toast.success(
+        loc.city || loc.locality ? `Pinned: ${loc.city || loc.locality}` : 'GPS coordinates captured.',
+        { id: toastId }
+      );
     }
-    if (toastId) toast.success('GPS coordinates captured.', { id: toastId });
   };
 
-  const handleDetectGPS = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser.');
-      return;
-    }
+  const handleDetectGPS = async () => {
+    setGpsNotice('');
     setIsDetecting(true);
-    const toastId = toast.loading('Detecting GPS location...');
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        updateField('latitude', Number(latitude));
-        updateField('longitude', Number(longitude));
-        await reverseGeocodeAndFill(latitude, longitude, toastId);
-        setIsDetecting(false);
-      },
-      (error) => {
-        setIsDetecting(false);
-        toast.error(
-          error.code === error.PERMISSION_DENIED
-            ? 'Location permission denied. Search by PIN or drag the map pin.'
-            : 'Could not detect GPS location. Search by PIN or drag the map pin.',
-          { id: toastId }
-        );
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
+    const toastId = toast.loading('Detecting browser GPS location...');
+    try {
+      const loc = await detectCurrentLocation(API);
+      if (loc.pincode) lastLookedUpPinRef.current = loc.pincode;
+      setFormData((prev) => ({
+        ...prev,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        city: loc.city || loc.locality || prev.city,
+        state: loc.state || prev.state,
+        locality: loc.locality || prev.locality,
+        pincode: loc.pincode || prev.pincode,
+        formattedAddress: loc.formattedAddress || prev.formattedAddress,
+        street: loc.locality || prev.street || '',
+      }));
+      toast.success(`Location detected: ${loc.city || loc.locality || 'Coordinates updated'}`, { id: toastId });
+    } catch (error) {
+      const msg = error?.message || 'Could not detect device GPS. Enter your PIN code, search your area, or click on the map.';
+      setGpsNotice(msg);
+      toast.error(msg, { id: toastId, duration: 5000 });
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   const runSearch = async (query) => {
@@ -350,6 +345,7 @@ export const ServiceFormFields = ({ formData, setFormData, categories = [], user
       const data = await res.json();
       const first = data?.results?.[0];
       if (data.success && first) {
+        lastLookedUpPinRef.current = pin;
         setFormData((prev) => ({
           ...prev,
           latitude: Number(first.latitude),
@@ -357,7 +353,7 @@ export const ServiceFormFields = ({ formData, setFormData, categories = [], user
           city: first.city || first.locality || prev.city,
           state: first.state || prev.state,
           locality: first.locality || prev.locality,
-          formattedAddress: prev.formattedAddress || first.formattedAddress,
+          formattedAddress: first.formattedAddress || prev.formattedAddress,
         }));
         toast.success(`PIN ${pin} located: ${first.city || first.locality || first.state}`);
       } else {
@@ -688,6 +684,20 @@ export const ServiceFormFields = ({ formData, setFormData, categories = [], user
             </button>
           </div>
         </div>
+
+        {gpsNotice && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 flex items-start justify-between gap-2">
+            <span>{gpsNotice}</span>
+            <button
+              type="button"
+              onClick={() => setGpsNotice('')}
+              className="text-amber-700 hover:text-amber-950 shrink-0"
+              aria-label="Dismiss GPS notice"
+            >
+              <FaTimes />
+            </button>
+          </div>
+        )}
 
         {/* Search Address / PIN Autosuggest */}
         <div className="relative" ref={searchBoxRef}>

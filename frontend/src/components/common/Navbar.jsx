@@ -23,6 +23,7 @@ import {
   Info
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { getDefaultRouteForUser, isApprovedProviderUser } from '../../utils/authRedirect';
 import BrandLogo from './BrandLogo';
 
 const Navbar = () => {
@@ -56,8 +57,9 @@ const Navbar = () => {
   ];
 
   const unreadCount = notifications.filter(n => !n.read).length;
-  const providerApproved = user?.providerStatus === 'approved'
-    || (user?.role === 'provider' && user?.verificationStatus === 'approved');
+  const providerApproved = isApprovedProviderUser(user);
+  const homeRoute = getDefaultRouteForUser(user);
+  const homeLabel = providerApproved ? 'Dashboard' : user?.role === 'admin' ? 'Admin' : 'Home';
 
   // Live auto-complete suggestions
   useEffect(() => {
@@ -126,9 +128,12 @@ const Navbar = () => {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      navigate('/');
+    }
   };
 
   const markAsRead = async (id, link) => {
@@ -161,7 +166,7 @@ const Navbar = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className={`flex items-center justify-between gap-4 ${isHome ? 'h-16 md:h-20' : 'h-16 md:h-18'}`}>
             {/* Logo */}
-            <BrandLogo size="sm" variant={isHome ? 'inverse' : 'default'} />
+            <BrandLogo size="sm" variant={isHome ? 'inverse' : 'default'} to={homeRoute} />
 
             {/* Desktop Navigation Links */}
             {isHome ? (
@@ -231,12 +236,12 @@ const Navbar = () => {
             ) : (
               <div className="hidden md:flex items-center gap-6 ml-4">
                 <Link
-                  to="/"
+                  to={homeRoute}
                   className={`text-sm font-semibold transition-colors duration-150 ${
-                    location.pathname === '/' ? 'text-[#b3261e]' : 'text-[#6a675f] hover:text-[#1a1a18]'
+                    location.pathname === homeRoute ? 'text-[#b3261e]' : 'text-[#6a675f] hover:text-[#1a1a18]'
                   }`}
                 >
-                  Home
+                  {homeLabel}
                 </Link>
                 <Link
                   to="/services"
@@ -695,9 +700,9 @@ const Navbar = () => {
                       </div>
                     </div>
 
-                    <Link to="/" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
+                    <Link to={homeRoute} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                       <HomeIcon className="w-4 h-4 text-slate-400" />
-                      <span>Home</span>
+                      <span>{homeLabel}</span>
                     </Link>
                     <Link to="/services" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                       <Search className="w-4 h-4 text-slate-400" />
@@ -752,9 +757,9 @@ const Navbar = () => {
                   </>
                 ) : (
                   <>
-                    <Link to="/" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
+                    <Link to={homeRoute} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                       <HomeIcon className="w-4 h-4 text-slate-400" />
-                      <span>Home</span>
+                      <span>{homeLabel}</span>
                     </Link>
                     <Link to="/services" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                       <Search className="w-4 h-4 text-slate-400" />
@@ -785,7 +790,7 @@ const Navbar = () => {
       </AnimatePresence>
 
       {/* Mobile Bottom Navigation */}
-      {isAuthenticated && (user?.role === 'customer' || providerApproved) && (
+      {isAuthenticated && user?.role === 'customer' && !providerApproved && (
         <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 z-40 md:hidden shadow-lg">
           <div className="flex items-center justify-around py-2">
             {[

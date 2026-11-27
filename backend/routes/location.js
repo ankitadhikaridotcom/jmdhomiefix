@@ -33,7 +33,7 @@ const isPrivateOrLoopbackIp = (ip) => {
   return false;
 };
 
-// Helper: Nominatim Reverse Geocode with BigDataCloud fallback
+// Helper: Multi-provider Reverse Geocode (Nominatim -> Photon -> BigDataCloud)
 async function reverseGeocode(lat, lon) {
   const cacheKey = `${Number(lat).toFixed(4)},${Number(lon).toFixed(4)}`;
   if (geocodeCache.has(cacheKey)) {
@@ -42,10 +42,11 @@ async function reverseGeocode(lat, lon) {
 
   let result = null;
 
+  // 1. OpenStreetMap Nominatim
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`;
     const response = await fetch(url, {
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(5000),
       headers: {
         'User-Agent': 'Nivestry/1.0 (contact@nivestry.com)',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -78,11 +79,48 @@ async function reverseGeocode(lat, lon) {
     console.warn('[Nominatim Reverse Geocode Fallback]', err.message);
   }
 
-  // Fallback to BigDataCloud free reverse geocode endpoint if Nominatim fails or times out
+  // 2. Komoot Photon Reverse Geocode
+  if (!result) {
+    try {
+      const photonUrl = `https://photon.komoot.io/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+      const photonRes = await fetch(photonUrl, {
+        signal: AbortSignal.timeout(5000),
+        headers: { 'User-Agent': 'Nivestry/1.0 (contact@nivestry.com)' },
+      });
+      if (photonRes.ok) {
+        const photonData = await photonRes.json();
+        const props = photonData?.features?.[0]?.properties;
+        if (props) {
+          const locality = props.locality || props.suburb || props.district || props.street || props.name || '';
+          const city = props.city || props.town || props.village || props.county || props.district || '';
+          const state = props.state || '';
+          const country = props.country || 'India';
+          const pincode = (props.postcode || '').replace(/\s+/g, '').slice(0, 6);
+          const formattedAddress = [props.name, locality !== props.name ? locality : '', city, state, pincode, country]
+            .filter(Boolean)
+            .join(', ');
+          result = {
+            formattedAddress: formattedAddress || `${Number(lat).toFixed(4)}, ${Number(lon).toFixed(4)}`,
+            locality,
+            city,
+            state,
+            country,
+            pincode,
+            latitude: Number(lat),
+            longitude: Number(lon),
+          };
+        }
+      }
+    } catch (photonErr) {
+      console.warn('[Photon Reverse Geocode Fallback]', photonErr.message);
+    }
+  }
+
+  // 3. BigDataCloud Reverse Geocode
   if (!result) {
     try {
       const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&localityLanguage=en`;
-      const bdcRes = await fetch(bdcUrl, { signal: AbortSignal.timeout(6000) });
+      const bdcRes = await fetch(bdcUrl, { signal: AbortSignal.timeout(5000) });
       if (bdcRes.ok) {
         const bdc = await bdcRes.json();
         const locality = bdc.locality || '';
@@ -149,9 +187,9 @@ router.get('/ip-detect', async (req, res) => {
 
     let detected = null;
 
-    // Primary: ipwho.is (HTTPS)
+    // 1. ipwho.is (HTTPS)
     try {
-      const whoRes = await fetch(`https://ipwho.is/${ipParam}`, { signal: AbortSignal.timeout(6000) });
+      const whoRes = await fetch(`https://ipwho.is/${ipParam}`, { signal: AbortSignal.timeout(4000) });
       if (whoRes.ok) {
         const who = await whoRes.json();
         if (who.success && isValidCoordinate(who.latitude, who.longitude)) {
@@ -169,12 +207,62 @@ router.get('/ip-detect', async (req, res) => {
       console.warn('[IP Detect ipwho.is warning]', whoErr.message);
     }
 
-    // Secondary fallback: ip-api.com
+    // 2. ipinfo.io (HTTPS)
+    if (!detected) {
+      try {
+        const infoUrl = ipParam ? `https://ipinfo.io/${ipParam}/json` : 'https://ipinfo.io/json';
+        const infoRes = await fetch(infoUrl, { signal: AbortSignal.timeout(4000) });
+        if (infoRes.ok) {
+          const info = await infoRes.json();
+          const [latStr, lonStr] = String(info.loc || '').split(',');
+          if (isValidCoordinate(latStr, lonStr)) {
+            detected = {
+              latitude: Number(latStr),
+              longitude: Number(lonStr),
+              city: info.city || '',
+              state: info.region || '',
+              country: info.country === 'IN' ? 'India' : (info.country || 'India'),
+              pincode: (info.postal || '').replace(/\s+/g, '').slice(0, 6),
+            };
+          }
+        }
+      } catch (infoErr) {
+        console.warn('[IP Detect ipinfo.io warning]', infoErr.message);
+      }
+    }
+
+    // 3. api.ip.sb (HTTPS)
+    if (!detected) {
+      try {
+        const sbUrl = ipParam ? `https://api.ip.sb/geoip/${ipParam}` : 'https://api.ip.sb/geoip';
+        const sbRes = await fetch(sbUrl, {
+          signal: AbortSignal.timeout(4000),
+          headers: { 'User-Agent': 'Nivestry/1.0' },
+        });
+        if (sbRes.ok) {
+          const sb = await sbRes.json();
+          if (isValidCoordinate(sb.latitude, sb.longitude)) {
+            detected = {
+              latitude: Number(sb.latitude),
+              longitude: Number(sb.longitude),
+              city: sb.city || '',
+              state: sb.region || '',
+              country: sb.country || 'India',
+              pincode: (sb.postal_code || '').replace(/\s+/g, '').slice(0, 6),
+            };
+          }
+        }
+      } catch (sbErr) {
+        console.warn('[IP Detect api.ip.sb warning]', sbErr.message);
+      }
+    }
+
+    // 4. ip-api.com (HTTP fallback)
     if (!detected) {
       try {
         const ipApiRes = await fetch(
           `http://ip-api.com/json/${ipParam}?fields=status,country,regionName,city,zip,lat,lon`,
-          { signal: AbortSignal.timeout(6000) }
+          { signal: AbortSignal.timeout(4000) }
         );
         if (ipApiRes.ok) {
           const ipApi = await ipApiRes.json();
@@ -198,16 +286,31 @@ router.get('/ip-detect', async (req, res) => {
       return res.status(503).json({ success: false, message: 'Could not detect approximate location from IP.' });
     }
 
-    const formattedAddress = [detected.city, detected.state, detected.country].filter(Boolean).join(', ');
+    let enrichedGeo = null;
+    try {
+      enrichedGeo = await reverseGeocode(detected.latitude, detected.longitude);
+    } catch {
+      // Fallback silently to IP provider fields
+    }
+
+    const city = detected.city || enrichedGeo?.city || '';
+    const state = detected.state || enrichedGeo?.state || '';
+    const country = detected.country || enrichedGeo?.country || 'India';
+    const locality = enrichedGeo?.locality || city;
+    const pincode = detected.pincode || enrichedGeo?.pincode || '';
+    const formattedAddress =
+      enrichedGeo?.formattedAddress
+      || [locality !== city ? locality : '', city, state, country].filter(Boolean).join(', ');
+
     return res.json({
       success: true,
       source: 'ip',
       formattedAddress: formattedAddress || `${detected.latitude.toFixed(4)}, ${detected.longitude.toFixed(4)}`,
-      locality: detected.city,
-      city: detected.city,
-      state: detected.state,
-      country: detected.country,
-      pincode: detected.pincode,
+      locality,
+      city,
+      state,
+      country,
+      pincode,
       latitude: detected.latitude,
       longitude: detected.longitude,
     });
@@ -236,38 +339,81 @@ router.get('/search', async (req, res) => {
       return res.json({ success: true, results: searchCache.get(cleanQuery) });
     }
 
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanQuery)}&addressdetails=1&limit=8`;
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(8000),
-      headers: {
-        'User-Agent': 'Nivestry/1.0 (contact@nivestry.com)',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
+    let results = [];
+    const pinOnly = /^\d{6}$/.test(cleanQuery);
+    const nomQuery = pinOnly ? `${cleanQuery}, india` : cleanQuery;
 
-    if (!response.ok) {
-      throw new Error(`Nominatim search error: ${response.statusText}`);
+    // 1. Nominatim (biased to India for PIN/local queries)
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(nomQuery)}&countrycodes=in&addressdetails=1&limit=8`;
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(6000),
+        headers: {
+          'User-Agent': 'Nivestry/1.0 (contact@nivestry.com)',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        results = data.map((item) => {
+          const addr = item.address || {};
+          const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || addr.subdistrict || '';
+          const city = addr.city || addr.town || addr.village || addr.municipality || addr.subdistrict || addr.county || addr.district || addr.state_district || '';
+          const state = addr.state || '';
+          const country = addr.country || 'India';
+          const pincode = (addr.postcode || '').replace(/\s+/g, '').slice(0, 6);
+          return {
+            formattedAddress: item.display_name,
+            locality,
+            city,
+            state,
+            country,
+            pincode,
+            latitude: Number(item.lat),
+            longitude: Number(item.lon),
+          };
+        }).filter((item) => isValidCoordinate(item.latitude, item.longitude));
+      }
+    } catch (nomErr) {
+      console.warn('[Nominatim Search Fallback]', nomErr.message);
     }
 
-    const data = await response.json();
-    const results = data.map(item => {
-      const addr = item.address || {};
-      const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || addr.subdistrict || '';
-      const city = addr.city || addr.town || addr.village || addr.municipality || addr.subdistrict || addr.county || addr.district || addr.state_district || '';
-      const state = addr.state || '';
-      const country = addr.country || 'India';
-      const pincode = (addr.postcode || '').replace(/\s+/g, '').slice(0, 6);
-      return {
-        formattedAddress: item.display_name,
-        locality,
-        city,
-        state,
-        country,
-        pincode,
-        latitude: Number(item.lat),
-        longitude: Number(item.lon),
-      };
-    }).filter((item) => isValidCoordinate(item.latitude, item.longitude));
+    // 2. Komoot Photon Search fallback
+    if (results.length === 0) {
+      try {
+        const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(nomQuery)}&limit=8&lat=22.97&lon=78.65`;
+        const pRes = await fetch(photonUrl, {
+          signal: AbortSignal.timeout(6000),
+          headers: { 'User-Agent': 'Nivestry/1.0 (contact@nivestry.com)' },
+        });
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          results = (pData.features || []).map((feature) => {
+            const props = feature.properties || {};
+            const [lon, lat] = feature.geometry?.coordinates || [];
+            const locality = props.locality || props.suburb || props.district || props.street || props.name || '';
+            const city = props.city || props.town || props.village || props.county || props.district || '';
+            const state = props.state || '';
+            const country = props.country || 'India';
+            const pincode = (props.postcode || '').replace(/\s+/g, '').slice(0, 6);
+            return {
+              formattedAddress: [props.name, locality !== props.name ? locality : '', city, state, pincode, country]
+                .filter(Boolean)
+                .join(', '),
+              locality,
+              city,
+              state,
+              country,
+              pincode,
+              latitude: Number(lat),
+              longitude: Number(lon),
+            };
+          }).filter((item) => isValidCoordinate(item.latitude, item.longitude));
+        }
+      } catch (photonErr) {
+        console.warn('[Photon Search Fallback]', photonErr.message);
+      }
+    }
 
     if (searchCache.size >= 500) searchCache.clear();
     searchCache.set(cleanQuery, results);

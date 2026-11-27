@@ -3,13 +3,9 @@ import { FaMapMarkerAlt, FaCrosshairs, FaSearch, FaMapMarkedAlt, FaBookmark, FaT
 import toast from 'react-hot-toast';
 import LeafletMap from './LeafletMap';
 import { useAuth } from '../../context/AuthContext';
+import { detectCurrentLocation, reverseGeocodeCoordinates } from '../../utils/locationDetect';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-const getBrowserPosition = (options) =>
-  new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, options);
-  });
 
 export default function LocationModal({ isOpen, onClose, onSelectLocation, initialLocation }) {
   const { user, refreshUser } = useAuth();
@@ -86,95 +82,43 @@ export default function LocationModal({ isOpen, onClose, onSelectLocation, initi
 
   // Reverse geocode coordinates with safe coordinate fallback
   const reverseGeocodeCoords = async (latitude, longitude) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/location/reverse-geocode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ latitude, longitude }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        const newLoc = {
-          latitude,
-          longitude,
-          address: data.formattedAddress || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
-          locality: data.locality || '',
-          city: data.city || '',
-          state: data.state || '',
-          country: data.country || 'India',
-          pincode: data.pincode || '',
-        };
-        setSelectedLoc(newLoc);
-        setGpsMethodNote('Exact browser location detected. Click "Confirm & Set Location" below to apply.');
-        toast.success(`Location detected: ${data.city || data.locality || 'Current Location'}`);
-        return;
-      }
-    } catch (err) {
-      console.error('[Reverse Geocode Fallback]', err);
-    }
-
-    // Even if reverse geocoding fails, preserve GPS coordinates so nearby services work
-    const fallbackLoc = {
-      latitude,
-      longitude,
-      address: `GPS Location (${Number(latitude).toFixed(4)}, ${Number(longitude).toFixed(4)})`,
-      locality: '',
-      city: '',
-      state: '',
-      country: 'India',
-      pincode: '',
-    };
-    setSelectedLoc(fallbackLoc);
-    setGpsMethodNote('GPS coordinates captured! Click "Confirm & Set Location" below to see nearby services.');
-    toast.success('GPS coordinates detected!');
+    const loc = await reverseGeocodeCoordinates(API_BASE, latitude, longitude);
+    setSelectedLoc({
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      address: loc.formattedAddress,
+      locality: loc.locality,
+      city: loc.city,
+      state: loc.state,
+      country: loc.country,
+      pincode: loc.pincode,
+    });
+    setGpsMethodNote('Exact browser location detected. Click "Confirm & Set Location" below to apply.');
+    toast.success(`Location detected: ${loc.city || loc.locality || 'Current Location'}`);
   };
 
   // 1. Browser Geolocation GPS Handler (no inaccurate ISP/IP override)
   const handleDetectGPS = async () => {
     setGpsError('');
     setGpsMethodNote('');
-
-    if (!navigator.geolocation) {
-      setGpsError('Your browser does not support GPS geolocation. Please search your city/area or choose on the map.');
-      toast.error('Geolocation is not supported by your browser.');
-      return;
-    }
-
     setGpsLoading(true);
     try {
-      let position;
-      try {
-        // Attempt 1: High accuracy (hardware/Wi-Fi)
-        position = await getBrowserPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
-      } catch (firstErr) {
-        if (firstErr.code === firstErr.PERMISSION_DENIED) {
-          throw firstErr;
-        }
-        // Attempt 2: Network / Wi-Fi / cached OS position
-        position = await getBrowserPosition({ enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 });
-      }
-
-      const { latitude, longitude } = position.coords;
-      await reverseGeocodeCoords(latitude, longitude);
+      const loc = await detectCurrentLocation(API_BASE);
+      setSelectedLoc({
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        address: loc.formattedAddress,
+        locality: loc.locality,
+        city: loc.city,
+        state: loc.state,
+        country: loc.country,
+        pincode: loc.pincode,
+      });
+      setGpsMethodNote('Exact browser location detected. Click "Confirm & Set Location" below to apply.');
+      toast.success(`Location detected: ${loc.city || loc.locality || 'Current Location'}`);
     } catch (error) {
-      console.warn('[Geolocation Error]', error?.code, error?.message);
-      if (error?.code === 1) {
-        setGpsError(
-          'Location permission is blocked in your browser or Windows Settings. Allow Location in your browser address bar (and check Windows Settings → Privacy & security → Location), or select your city manually below.'
-        );
-        toast.error('Location permission denied.');
-      } else if (error?.code === 3) {
-        setGpsError(
-          'GPS detection timed out on this device. Check Windows Location Services, or quickly pick your exact city/area via Search or Map below.'
-        );
-        toast.error('GPS detection timed out.');
-      } else {
-        setGpsError(
-          'Device GPS / Wi-Fi location is unavailable on this browser (common on desktops without GPS or when Windows Location Services is off). Please select your exact city/area via Search or Map below.'
-        );
-        toast.error('Device GPS unavailable. Please search your city or pick on map.');
-      }
+      setGpsError(error.message || 'Could not detect location. Please select your exact city/area via Search or Map below.');
+      toast.error(error.message || 'Could not detect location.');
     } finally {
       setGpsLoading(false);
     }

@@ -16,6 +16,7 @@ import {
 } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import LeafletMap from '../../components/common/LeafletMap';
+import { detectCurrentLocation } from '../../utils/locationDetect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -157,69 +158,34 @@ export default function MyAddresses() {
     }
   };
 
-  // 1. Browser Geolocation GPS Handler (Auto-detect)
-  const handleDetectGPS = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser.');
-      return;
-    }
+  // 1. Browser Geolocation GPS Handler (Auto-detect with IP fallback)
+  const handleDetectGPS = async () => {
     setIsDetecting(true);
-    const toastId = toast.loading('Detecting your GPS location...');
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        try {
-          const res = await fetch(`${API}/api/location/reverse-geocode`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ latitude, longitude }),
-          });
-          const data = await res.json();
-
-          if (data.success) {
-            setFormData((prev) => ({
-              ...prev,
-              latitude: Number(latitude),
-              longitude: Number(longitude),
-              address: data.formattedAddress || prev.address,
-              locality: data.locality || prev.locality,
-              city: data.city || data.locality || prev.city,
-              state: data.state || prev.state,
-              pincode: data.pincode || prev.pincode,
-            }));
-            setSearchQuery(data.formattedAddress || `${data.city}, ${data.state}`);
-            toast.success(`Location detected: ${data.city || data.locality || 'Coordinates updated'}`, { id: toastId });
-          } else {
-            setFormData((prev) => ({
-              ...prev,
-              latitude: Number(latitude),
-              longitude: Number(longitude),
-            }));
-            toast.success('GPS coordinates detected.', { id: toastId });
-          }
-        } catch (err) {
-          console.error('[Detect Location Error]', err);
-          setFormData((prev) => ({
-            ...prev,
-            latitude: Number(latitude),
-            longitude: Number(longitude),
-          }));
-          toast.success('GPS coordinates detected.', { id: toastId });
-        } finally {
-          setIsDetecting(false);
-        }
-      },
-      (error) => {
-        setIsDetecting(false);
-        if (error.code === error.PERMISSION_DENIED) {
-          toast.error('Location permission was denied. Please allow location access or search your address.', { id: toastId });
-        } else {
-          toast.error('Could not detect device location. Please search manually.', { id: toastId });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
+    const toastId = toast.loading('Detecting your location...');
+    try {
+      const data = await detectCurrentLocation(API);
+      setFormData((prev) => ({
+        ...prev,
+        latitude: Number(data.latitude),
+        longitude: Number(data.longitude),
+        address: data.formattedAddress || prev.address,
+        locality: data.locality || prev.locality,
+        city: data.city || data.locality || prev.city,
+        state: data.state || prev.state,
+        pincode: data.pincode || prev.pincode,
+      }));
+      setSearchQuery(data.formattedAddress || `${data.city}, ${data.state}`);
+      toast.success(
+        data.approximate
+          ? `Approximate location set (${data.city || 'network'}). Drag the map pin to adjust.`
+          : `Location detected: ${data.city || data.locality || 'Coordinates updated'}`,
+        { id: toastId }
+      );
+    } catch (error) {
+      toast.error(error.message || 'Could not detect device location. Please search manually.', { id: toastId });
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   // 2. Autosuggest search handler

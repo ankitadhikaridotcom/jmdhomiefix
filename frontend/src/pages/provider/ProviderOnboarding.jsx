@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import LeafletMap from '../../components/common/LeafletMap';
+import { detectCurrentLocation } from '../../utils/locationDetect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -136,68 +137,34 @@ const ProviderOnboarding = () => {
     }
   };
 
-  // Browser Geolocation handler (Auto-detect)
-  const handleDetectGPS = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser.');
-      return;
-    }
+  // Browser Geolocation handler (Auto-detect with IP fallback)
+  const handleDetectGPS = async () => {
     setIsDetecting(true);
-    const toastId = toast.loading('Detecting your GPS location...');
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        try {
-          const res = await axios.post(`${API}/api/location/reverse-geocode`, {
-            latitude,
-            longitude,
-          });
-
-          if (res.data?.success) {
-            const loc = res.data;
-            setData((prev) => ({
-              ...prev,
-              latitude: Number(latitude),
-              longitude: Number(longitude),
-              city: loc.city || loc.locality || prev.city,
-              state: loc.state || prev.state,
-              pincode: loc.pincode || prev.pincode,
-              formattedAddress: loc.formattedAddress || prev.formattedAddress,
-              areas: prev.areas ? prev.areas : (loc.locality || loc.city || ''),
-            }));
-            setSearchQuery(loc.formattedAddress || `${loc.city}, ${loc.state}`);
-            toast.success(`Location detected: ${loc.city || loc.locality || 'Coordinates updated'}`, { id: toastId });
-          } else {
-            setData((prev) => ({
-              ...prev,
-              latitude: Number(latitude),
-              longitude: Number(longitude),
-            }));
-            toast.success('GPS coordinates detected.', { id: toastId });
-          }
-        } catch (err) {
-          console.error('[Detect Location Error]', err);
-          setData((prev) => ({
-            ...prev,
-            latitude: Number(latitude),
-            longitude: Number(longitude),
-          }));
-          toast.success('GPS coordinates detected.', { id: toastId });
-        } finally {
-          setIsDetecting(false);
-        }
-      },
-      (error) => {
-        setIsDetecting(false);
-        if (error.code === error.PERMISSION_DENIED) {
-          toast.error('Location permission was denied. Please allow location access or search your city.', { id: toastId });
-        } else {
-          toast.error('Could not detect device location. Please search manually.', { id: toastId });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
+    const toastId = toast.loading('Detecting your location...');
+    try {
+      const loc = await detectCurrentLocation(API);
+      setData((prev) => ({
+        ...prev,
+        latitude: Number(loc.latitude),
+        longitude: Number(loc.longitude),
+        city: loc.city || loc.locality || prev.city,
+        state: loc.state || prev.state,
+        pincode: loc.pincode || prev.pincode,
+        formattedAddress: loc.formattedAddress || prev.formattedAddress,
+        areas: prev.areas ? prev.areas : (loc.locality || loc.city || ''),
+      }));
+      setSearchQuery(loc.formattedAddress || `${loc.city}, ${loc.state}`);
+      toast.success(
+        loc.approximate
+          ? `Approximate location set (${loc.city || 'network'}). Drag the map pin to adjust.`
+          : `Location detected: ${loc.city || loc.locality || 'Coordinates updated'}`,
+        { id: toastId }
+      );
+    } catch (error) {
+      toast.error(error.message || 'Could not detect device location. Please search manually.', { id: toastId });
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   // Autosuggest Search input handler

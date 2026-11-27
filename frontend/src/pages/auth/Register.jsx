@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { FaUser, FaEnvelope, FaLock, FaEye, FaEyeSlash, FaArrowRight } from 'react-icons/fa';
@@ -7,20 +7,25 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import BrandLogo from '../../components/common/BrandLogo';
+import { getDefaultRouteForUser } from '../../utils/authRedirect';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { register: createAccount } = useAuth();
+  const { register: createAccount, isAuthenticated, user } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm();
 
+  if (isAuthenticated && user) {
+    return <Navigate to={getDefaultRouteForUser(user)} replace />;
+  }
+
   const onSubmit = async ({ name, email, password }) => {
     setIsLoading(true);
     try {
-      await createAccount({ name: name.trim(), email: email.trim(), password });
+      const res = await createAccount({ name: name.trim(), email: email.trim(), password });
       toast.success('Account created successfully!');
-      navigate('/', { replace: true });
+      navigate(getDefaultRouteForUser(res?.user), { replace: true });
     } catch (err) {
       toast.error(err.message || 'Registration failed. Please try again.');
     } finally {

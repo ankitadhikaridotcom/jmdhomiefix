@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
+import { detectCurrentLocation } from '../../utils/locationDetect';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -98,54 +99,32 @@ const Booking = () => {
   }, [setValue]);
 
   // Auto-detect GPS location handler
-  const handleAutoDetectLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser.');
-      return;
-    }
+  const handleAutoDetectLocation = async () => {
     setIsDetectingLocation(true);
-    const toastId = toast.loading('Detecting your GPS location...');
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const res = await fetch(`${API}/api/location/reverse-geocode`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-          });
-          const data = await res.json();
-          if (data.success) {
-            setValue('address', data.formattedAddress || `${data.locality || ''}, ${data.city || ''}`);
-            setValue('city', data.city || data.locality || '');
-            setValue('pincode', data.pincode || '');
-            setValue('locality', data.locality || '');
-            setValue('state', data.state || '');
-            setValue('formattedAddress', data.formattedAddress || '');
-            setValue('latitude', pos.coords.latitude);
-            setValue('longitude', pos.coords.longitude);
-            setSelectedAddressId(null);
-            setSearchQuery(data.formattedAddress || `${data.city}, ${data.state}`);
-            toast.success(`Location detected: ${data.city || data.locality || 'Address filled'}`, { id: toastId });
-          } else {
-            toast.error('Could not determine address from location.', { id: toastId });
-          }
-        } catch {
-          toast.error('Failed to resolve GPS address.', { id: toastId });
-        } finally {
-          setIsDetectingLocation(false);
-        }
-      },
-      (err) => {
-        setIsDetectingLocation(false);
-        if (err.code === err.PERMISSION_DENIED) {
-          toast.error('Location permission was denied. Please allow location access or type manually.', { id: toastId });
-        } else {
-          toast.error('Could not detect device location. Please search manually.', { id: toastId });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
+    const toastId = toast.loading('Detecting your location...');
+    try {
+      const data = await detectCurrentLocation(API);
+      setValue('address', data.formattedAddress || `${data.locality || ''}, ${data.city || ''}`);
+      setValue('city', data.city || data.locality || '');
+      setValue('pincode', data.pincode || '');
+      setValue('locality', data.locality || '');
+      setValue('state', data.state || '');
+      setValue('formattedAddress', data.formattedAddress || '');
+      setValue('latitude', data.latitude);
+      setValue('longitude', data.longitude);
+      setSelectedAddressId(null);
+      setSearchQuery(data.formattedAddress || `${data.city}, ${data.state}`);
+      toast.success(
+        data.approximate
+          ? `Approximate location set (${data.city || 'network'}). Refine address or PIN if needed.`
+          : `Location detected: ${data.city || data.locality || 'Address filled'}`,
+        { id: toastId }
+      );
+    } catch (err) {
+      toast.error(err.message || 'Could not detect device location. Please search manually.', { id: toastId });
+    } finally {
+      setIsDetectingLocation(false);
+    }
   };
 
   // Autosuggest search query handler

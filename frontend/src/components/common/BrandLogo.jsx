@@ -8,15 +8,15 @@ const sizes = {
 
 const artworkSizes = { sm: 'w-36', md: 'w-48', lg: 'w-64' };
 
-const BrandLogo = ({ size = 'md', variant = 'default', subtitle, artwork = false, className = '' }) => {
+const BrandLogo = ({ size = 'md', variant = 'default', subtitle, artwork = false, to = '/', className = '' }) => {
   const scale = sizes[size] || sizes.md;
   const isInverse = variant === 'inverse';
   const textColor = isInverse ? 'text-[#f7f5f0]' : 'text-[#1a1a18]';
 
   return (
     <Link
-      to="/"
-      aria-label="Nivestry home"
+      to={to}
+      aria-label={to === '/' ? 'Nivestry home' : 'Nivestry dashboard'}
       className={`inline-flex shrink-0 items-center ${artwork ? '' : 'gap-2.5'} ${className}`}
     >
       {artwork ? (

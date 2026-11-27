@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { FaUser, FaEnvelope, FaPhone, FaMapMarkerAlt, FaCamera, FaEdit, FaSave, FaCrosshairs, FaSpinner } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import { detectCurrentLocation } from '../../utils/locationDetect';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -25,48 +26,24 @@ const CustomerProfile = () => {
     },
   });
 
-  const handleDetectGPS = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser.');
-      return;
-    }
+  const handleDetectGPS = async () => {
     setIsDetecting(true);
-    const toastId = toast.loading('Detecting your GPS location...');
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        try {
-          const res = await fetch(`${API}/api/location/reverse-geocode`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ latitude, longitude }),
-          });
-          const data = await res.json();
-
-          if (data.success) {
-            setValue('address', data.formattedAddress || `${data.locality || ''}, ${data.city || ''}`);
-            setValue('city', data.city || data.locality || '');
-            toast.success(`Location detected: ${data.city || data.locality || 'Coordinates updated'}`, { id: toastId });
-          } else {
-            toast.error('Could not determine address from location.', { id: toastId });
-          }
-        } catch {
-          toast.error('Failed to resolve GPS coordinates.', { id: toastId });
-        } finally {
-          setIsDetecting(false);
-        }
-      },
-      (error) => {
-        setIsDetecting(false);
-        if (error.code === error.PERMISSION_DENIED) {
-          toast.error('Location permission was denied. Please allow location access in your browser.', { id: toastId });
-        } else {
-          toast.error('Could not detect device location. Please enter manually.', { id: toastId });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
+    const toastId = toast.loading('Detecting your location...');
+    try {
+      const data = await detectCurrentLocation(API);
+      setValue('address', data.formattedAddress || `${data.locality || ''}, ${data.city || ''}`);
+      setValue('city', data.city || data.locality || '');
+      toast.success(
+        data.approximate
+          ? `Approximate location set (${data.city || 'network'}).`
+          : `Location detected: ${data.city || data.locality || 'Coordinates updated'}`,
+        { id: toastId }
+      );
+    } catch (error) {
+      toast.error(error.message || 'Could not detect device location. Please enter manually.', { id: toastId });
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   const onSubmit = async (data) => {

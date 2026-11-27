@@ -74,23 +74,23 @@ const AddService = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="pb-12">
       <div className="max-w-4xl mx-auto">
         <button
           onClick={() => navigate('/provider')}
-          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-6"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[#6a675f] hover:text-[#1a1a18] mb-5 transition"
         >
           <FaArrowLeft /> Back to Dashboard
         </button>
 
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+          className="bg-white rounded-3xl shadow-sm border border-[#dedad0] overflow-hidden"
         >
-          <div className="p-6 md:p-8 border-b border-gray-100">
-            <h1 className="text-2xl font-bold text-gray-900">Add New Service</h1>
-            <p className="text-gray-500 mt-1">
+          <div className="p-6 md:p-8 bg-[#1a1a18] text-[#f7f5f0] border-b border-[#2b2b28]">
+            <h1 className="text-2xl font-extrabold">Add New Service</h1>
+            <p className="text-[#ebe8df]/75 mt-1 text-sm">
               Set service category, kind, pricing model, coverage PIN code, address, and map pin so customers can book you immediately.
             </p>
           </div>
@@ -103,18 +103,18 @@ const AddService = () => {
               user={user}
             />
 
-            <div className="pt-4 border-t border-gray-100 flex justify-end gap-3">
+            <div className="pt-4 border-t border-[#ebe8df] flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => navigate('/provider/services')}
-                className="btn-ghost"
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-[#6a675f] hover:bg-[#ebe8df] transition"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="btn-primary flex items-center gap-2"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#b3261e] hover:bg-[#9c2019] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition disabled:opacity-60"
               >
                 {loading ? 'Publishing...' : <><FaPlus /> Publish Service</>}
               </button>

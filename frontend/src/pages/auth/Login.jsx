@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { FaEnvelope, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import BrandLogo from '../../components/common/BrandLogo';
+import { getDefaultRouteForUser } from '../../utils/authRedirect';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -16,17 +17,17 @@ const Login = () => {
 
   const { register, handleSubmit, formState: { errors } } = useForm();
 
-  // If already authenticated, redirect
+  // If already authenticated, redirect to role's landing page
   if (isAuthenticated && user) {
-    navigate('/', { replace: true }); return null;
+    return <Navigate to={getDefaultRouteForUser(user)} replace />;
   }
 
   const onSubmit = async (data) => {
     setIsLoading(true);
     try {
-      await login({ email: data.email, password: data.password });
+      const res = await login({ email: data.email, password: data.password });
       toast.success('Welcome back! 🎉');
-      navigate('/', { replace: true });
+      navigate(getDefaultRouteForUser(res?.user), { replace: true });
     } catch (err) {
       toast.error(err.message || 'Invalid credentials. Please try again.');
     } finally {

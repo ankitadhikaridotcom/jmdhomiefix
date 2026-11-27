@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { Component, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
 import {
@@ -19,10 +19,12 @@ import {
   Home as HomeIcon,
   HelpCircle,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  PlusCircle
 } from 'lucide-react';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { getDefaultRouteForUser, isApprovedProviderUser } from './utils/authRedirect';
 import Navbar from './components/common/Navbar';
 import Footer from './components/common/Footer';
 import Sidebar from './components/common/Sidebar';
@@ -92,8 +94,9 @@ const PageTransition = ({ children }) => {
 // Provider Layout Links with Lucide Icons
 const providerLinks = [
   { to: '/provider', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/provider/bookings', label: 'Bookings', icon: ClipboardList },
   { to: '/provider/services', label: 'My Services', icon: Briefcase },
+  { to: '/provider/add-service', label: 'Add Service', icon: PlusCircle },
+  { to: '/provider/bookings', label: 'Bookings', icon: ClipboardList },
   { to: '/provider/custom-requests', label: 'Custom Requests', icon: MessageSquare },
   { to: '/provider/earnings', label: 'Earnings', icon: Wallet },
   { to: '/provider/reviews', label: 'Reviews', icon: Star },
@@ -104,31 +107,22 @@ const providerLinks = [
 const ProviderLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-[#f7f5f0] text-[#1a1a18]">
       <Sidebar links={providerLinks} title="Provider" isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 min-w-0">
         {/* Top Bar for provider */}
-        <div className="sticky top-0 z-30 bg-white/85 backdrop-blur-md border-b border-slate-200/80 px-6 py-3.5 flex items-center justify-between lg:hidden shadow-sm">
+        <div className="sticky top-0 z-30 bg-[#f7f5f0]/90 backdrop-blur-md border-b border-[#dedad0] px-6 py-3.5 flex items-center justify-between lg:hidden shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+            className="p-2 rounded-xl text-[#1a1a18] hover:bg-[#ebe8df] transition-colors"
             aria-label="Open sidebar"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <BrandLogo size="sm" />
+          <BrandLogo size="sm" to="/provider" />
           <div className="w-9" />
         </div>
         <main className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
-          <div className="mb-6 flex justify-end">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs md:text-sm font-semibold text-slate-700 shadow-sm transition hover:border-[#0EA5E9] hover:text-[#0284C7] hover:bg-sky-50/50"
-            >
-              <HomeIcon className="w-4 h-4 text-slate-400" />
-              <span>Switch to Customer Home</span>
-            </Link>
-          </div>
           <Outlet />
         </main>
       </div>
@@ -161,7 +155,7 @@ const AdminLayout = () => {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <BrandLogo size="sm" />
+            <BrandLogo size="sm" to="/admin" />
             <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md bg-slate-100 text-slate-600 border border-slate-200">
               Admin
             </span>
@@ -189,37 +183,97 @@ const PublicLayout = () => {
   );
 };
 
+// Landing route guard — providers always land on their dashboard, never customer Home
+const HomeRoute = () => {
+  const { user, isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  if (isAuthenticated && isApprovedProviderUser(user)) {
+    return <Navigate to="/provider" replace />;
+  }
+  return <Home />;
+};
+
 // Modern 404
-const NotFound = () => (
-  <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="max-w-md w-full bg-white p-8 md:p-10 rounded-2xl border border-slate-200/80 shadow-lg text-center"
-    >
-      <div className="w-16 h-16 rounded-2xl bg-sky-50 text-[#0284C7] mx-auto flex items-center justify-center mb-6">
-        <AlertCircle className="w-8 h-8 stroke-[1.75]" />
-      </div>
-      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Error 404</span>
-      <h1 className="text-3xl font-extrabold text-slate-900 mt-2 mb-3">Page not found</h1>
-      <p className="text-sm text-slate-500 leading-relaxed mb-6">
-        The page you are looking for might have been moved, removed, or is temporarily unavailable.
-      </p>
-      <Link
-        to="/"
-        className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl bg-[#0EA5E9] hover:bg-[#0284C7] text-white font-semibold text-sm shadow-sm transition hover:shadow focus:ring-2 focus:ring-[#0EA5E9]/40"
+const NotFound = () => {
+  const { user } = useAuth();
+  const fallbackRoute = getDefaultRouteForUser(user);
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-md w-full bg-white p-8 md:p-10 rounded-2xl border border-slate-200/80 shadow-lg text-center"
       >
-        <HomeIcon className="w-4 h-4" />
-        <span>Return to Home</span>
-      </Link>
-    </motion.div>
-  </div>
-);
+        <div className="w-16 h-16 rounded-2xl bg-sky-50 text-[#0284C7] mx-auto flex items-center justify-center mb-6">
+          <AlertCircle className="w-8 h-8 stroke-[1.75]" />
+        </div>
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Error 404</span>
+        <h1 className="text-3xl font-extrabold text-slate-900 mt-2 mb-3">Page not found</h1>
+        <p className="text-sm text-slate-500 leading-relaxed mb-6">
+          The page you are looking for might have been moved, removed, or is temporarily unavailable.
+        </p>
+        <Link
+          to={fallbackRoute}
+          className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 rounded-xl bg-[#0EA5E9] hover:bg-[#0284C7] text-white font-semibold text-sm shadow-sm transition hover:shadow focus:ring-2 focus:ring-[#0EA5E9]/40"
+        >
+          <HomeIcon className="w-4 h-4" />
+          <span>{fallbackRoute === '/provider' ? 'Return to Provider Dashboard' : 'Return to Home'}</span>
+        </Link>
+      </motion.div>
+    </div>
+  );
+};
+
+// Graceful fallback UI if an unexpected client rendering error occurs
+class AppErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, message: error?.message || 'Unexpected rendering error.' };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('UI ErrorBoundary caught:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#f7f5f0] p-6 text-[#1a1a18]">
+          <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-[#dedad0] shadow-lg text-center">
+            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-[#b3261e] border border-rose-200 mx-auto flex items-center justify-center mb-5">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+            <h1 className="text-xl font-extrabold text-[#1a1a18]">Something went wrong</h1>
+            <p className="text-xs text-[#6a675f] mt-2 mb-6 leading-relaxed">
+              {this.state.message}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, message: '' });
+                window.location.reload();
+              }}
+              className="w-full px-5 py-2.5 rounded-xl bg-[#b3261e] hover:bg-[#9c2019] text-white text-sm font-bold transition"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <AppErrorBoundary>
         <Toaster
           position="top-right"
           toastOptions={{
@@ -267,7 +321,7 @@ function App() {
 
           {/* Public + Customer Routes */}
           <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<HomeRoute />} />
             <Route path="/services" element={<Services />} />
             <Route path="/services/:id" element={<ServiceDetail />} />
             
@@ -292,6 +346,7 @@ function App() {
           {/* 404 */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </AppErrorBoundary>
       </AuthProvider>
     </BrowserRouter>
   );

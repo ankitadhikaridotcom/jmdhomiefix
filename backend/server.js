@@ -1032,6 +1032,7 @@ app.put('/api/services/:id/toggle', requireAuth, requireRole('provider'), async 
     if (!service) return res.status(404).json({ success: false, message: 'Service not found.' });
     service.isActive = !service.isActive;
     await service.save();
+    await service.populate('provider', PROVIDER_PUBLIC_FIELDS);
     res.json({ success: true, isActive: service.isActive, service: mapService(service) });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to toggle service.' });
