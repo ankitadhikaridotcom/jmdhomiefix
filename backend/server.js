@@ -27,6 +27,9 @@ const {
   sendBookingConfirmationEmail,
   sendBookingCompletedEmail,
   sendCustomerBookingsListEmail,
+  sendVerificationOtpEmail,
+  sendPasswordResetEmail,
+  sendLoginOtpEmail,
 } = require('./utils/emailService');
 const {
   CATEGORY_ALIASES,
@@ -62,12 +65,21 @@ const toPublicUser = (user) => {
   const publicUser = user.toObject();
   publicUser.id = publicUser._id.toString();
   delete publicUser.password;
+  delete publicUser.emailVerifyCodeHash;
+  delete publicUser.emailVerifyExpiresAt;
+  delete publicUser.resetPasswordTokenHash;
+  delete publicUser.resetPasswordExpiresAt;
+  delete publicUser.loginOtpHash;
+  delete publicUser.loginOtpExpiresAt;
+  publicUser.emailVerified = publicUser.emailVerified !== false;
   if (publicUser.phone?.startsWith('email_')) publicUser.phone = '';
   if (publicUser.role === 'provider' && publicUser.providerStatus === 'not_applied') {
     publicUser.providerStatus = publicUser.verificationStatus || 'not_applied';
   }
   return publicUser;
 };
+const hashOtp = (otp) => crypto.createHash('sha256').update(String(otp).trim()).digest('hex');
+const generateSixDigitOtp = () => String(crypto.randomInt(100000, 1000000));
 const publicPhone = (phone) => (phone?.startsWith('email_') ? '' : phone || '');
 
 const allowedOrigins = new Set(
@@ -237,6 +249,7 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ success: false, message: 'An account with this email already exists.' });
     }
     const hashed = await bcrypt.hash(password, 10);
+    const otp = generateSixDigitOtp();
     const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
@@ -244,13 +257,26 @@ app.post('/api/auth/register', async (req, res) => {
       password: hashed,
       role: 'customer',
       phoneVerified: false,
+      emailVerified: false,
+      emailVerifyCodeHash: hashOtp(otp),
+      emailVerifyExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
       verificationStatus: 'approved',
     });
+
+    const emailResult = await sendVerificationOtpEmail({
+      to: user.email,
+      name: user.name,
+      otp,
+    });
+
     const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     setAuthCookie(res, token);
     res.status(201).json({
       success: true,
-      message: 'Registration successful.',
+      message: emailResult.sent
+        ? 'Account created! A 6-digit verification code has been sent to your email.'
+        : 'Account created! You can verify your email anytime from your profile.',
+      emailSent: Boolean(emailResult.sent),
       user: toPublicUser(user),
     });
   } catch (err) {
@@ -287,16 +313,143 @@ app.post('/api/auth/login', async (req, res) => {
     if (user.role === 'provider' && user.verificationStatus === 'suspended') {
       return res.status(403).json({ success: false, message: 'This provider account is suspended.' });
     }
-    const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    setAuthCookie(res, token);
-    // Role is always from DB — frontend must redirect based on this, not its own state
-    res.json({
-      success: true,
-      user: toPublicUser(user),
+
+    const otp = generateSixDigitOtp();
+    user.loginOtpHash = hashOtp(otp);
+    user.loginOtpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save();
+
+    const emailResult = await sendLoginOtpEmail({
+      to: user.email,
+      name: user.name,
+      otp,
+    });
+
+    if (emailResult.sent) {
+      const challengeToken = jwt.sign(
+        { id: user._id.toString(), purpose: 'login_otp' },
+        JWT_SECRET,
+        { expiresIn: '10m' }
+      );
+      return res.json({
+        success: true,
+        requiresOtp: true,
+        challengeToken,
+        email: user.email,
+        message: 'A 6-digit login verification code has been sent to your email.',
+      });
+    }
+
+    // In dev/sandbox mode, if Resend blocks external emails (403 unverified domain), allow password-verified fallback without locking out demo accounts
+    if (process.env.NODE_ENV !== 'production' && emailResult.status === 403) {
+      user.loginOtpHash = undefined;
+      user.loginOtpExpiresAt = undefined;
+      await user.save();
+      const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+      setAuthCookie(res, token);
+      return res.json({
+        success: true,
+        otpSkippedNote: 'Signed in (Resend sandbox limits OTP emails to verified domain/owner email).',
+        user: toPublicUser(user),
+      });
+    }
+
+    return res.status(502).json({
+      success: false,
+      message: 'Could not send login verification code. Please try again.',
     });
   } catch (err) {
     console.error('[Login Error]', err.message);
     res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
+  }
+});
+
+// Verify 6-digit login OTP and issue session cookie
+app.post('/api/auth/verify-login-otp', async (req, res) => {
+  try {
+    const challengeToken = typeof req.body?.challengeToken === 'string' ? req.body.challengeToken : '';
+    const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : '';
+    if (!challengeToken || !/^\d{6}$/.test(otp)) {
+      return res.status(400).json({ success: false, message: 'Enter a valid 6-digit login code.' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(challengeToken, JWT_SECRET, { algorithms: ['HS256'] });
+    } catch {
+      return res.status(401).json({ success: false, message: 'Login verification session expired. Please sign in again.' });
+    }
+    if (decoded?.purpose !== 'login_otp' || !decoded?.id) {
+      return res.status(401).json({ success: false, message: 'Invalid login verification challenge.' });
+    }
+
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+    if (user.accountStatus === 'suspended' || (user.role === 'provider' && user.verificationStatus === 'suspended')) {
+      return res.status(403).json({ success: false, message: 'This account is suspended.' });
+    }
+    if (!user.loginOtpHash || !user.loginOtpExpiresAt || user.loginOtpExpiresAt < new Date()) {
+      return res.status(400).json({ success: false, message: 'Login code has expired. Please request a new code.' });
+    }
+    if (hashOtp(otp) !== user.loginOtpHash) {
+      return res.status(400).json({ success: false, message: 'Invalid 6-digit login code.' });
+    }
+
+    user.loginOtpHash = undefined;
+    user.loginOtpExpiresAt = undefined;
+    if (user.emailVerified === false) {
+      user.emailVerified = true;
+      user.emailVerifyCodeHash = undefined;
+      user.emailVerifyExpiresAt = undefined;
+    }
+    await user.save();
+
+    const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    setAuthCookie(res, token);
+    res.json({
+      success: true,
+      message: 'Login verified successfully.',
+      user: toPublicUser(user),
+    });
+  } catch (err) {
+    console.error('[Verify Login OTP Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to verify login code.' });
+  }
+});
+
+// Resend 6-digit login OTP
+app.post('/api/auth/resend-login-otp', async (req, res) => {
+  try {
+    const challengeToken = typeof req.body?.challengeToken === 'string' ? req.body.challengeToken : '';
+    if (!challengeToken) {
+      return res.status(400).json({ success: false, message: 'Login session missing. Please sign in again.' });
+    }
+    let decoded;
+    try {
+      decoded = jwt.verify(challengeToken, JWT_SECRET, { algorithms: ['HS256'] });
+    } catch {
+      return res.status(401).json({ success: false, message: 'Login verification session expired. Please sign in again.' });
+    }
+    if (decoded?.purpose !== 'login_otp' || !decoded?.id) {
+      return res.status(401).json({ success: false, message: 'Invalid login verification challenge.' });
+    }
+
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    const otp = generateSixDigitOtp();
+    user.loginOtpHash = hashOtp(otp);
+    user.loginOtpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save();
+
+    const emailResult = await sendLoginOtpEmail({ to: user.email, name: user.name, otp });
+    if (!emailResult.sent) {
+      return res.status(502).json({ success: false, message: 'Failed to resend login code.' });
+    }
+    res.json({ success: true, message: 'A fresh 6-digit login code has been sent to your email.' });
+  } catch (err) {
+    console.error('[Resend Login OTP Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to resend login code.' });
   }
 });
 
@@ -308,6 +461,120 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[Fetch Current User Error]', err.message);
     res.status(500).json({ success: false, message: 'Failed to fetch current user.' });
+  }
+});
+
+// Verify newly registered user's email using 6-digit OTP
+app.post('/api/auth/verify-email', requireAuth, async (req, res) => {
+  try {
+    const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : '';
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({ success: false, message: 'Enter a valid 6-digit verification code.' });
+    }
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+    if (user.emailVerified !== false) {
+      return res.json({ success: true, message: 'Email is already verified.', user: toPublicUser(user) });
+    }
+    if (!user.emailVerifyCodeHash || !user.emailVerifyExpiresAt || user.emailVerifyExpiresAt < new Date()) {
+      return res.status(400).json({ success: false, message: 'Verification code has expired. Please request a new code.' });
+    }
+    if (hashOtp(otp) !== user.emailVerifyCodeHash) {
+      return res.status(400).json({ success: false, message: 'Invalid verification code.' });
+    }
+    user.emailVerified = true;
+    user.emailVerifyCodeHash = undefined;
+    user.emailVerifyExpiresAt = undefined;
+    await user.save();
+    res.json({ success: true, message: 'Email verified successfully!', user: toPublicUser(user) });
+  } catch (err) {
+    console.error('[Verify Email Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to verify email.' });
+  }
+});
+
+// Resend email verification OTP
+app.post('/api/auth/resend-verification', requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+    if (user.emailVerified !== false) {
+      return res.json({ success: true, message: 'Email is already verified.', user: toPublicUser(user) });
+    }
+    const otp = generateSixDigitOtp();
+    user.emailVerifyCodeHash = hashOtp(otp);
+    user.emailVerifyExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await user.save();
+
+    const emailResult = await sendVerificationOtpEmail({ to: user.email, name: user.name, otp });
+    if (!emailResult.sent) {
+      return res.status(502).json({
+        success: false,
+        message: emailResult.error?.message || 'Could not deliver verification email (check Resend domain settings).',
+      });
+    }
+    res.json({ success: true, message: 'Verification code sent to your email.' });
+  } catch (err) {
+    console.error('[Resend Verification Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to resend verification email.' });
+  }
+});
+
+// Request password reset OTP via Resend
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    if (!/.+@.+\..+/.test(rawEmail)) {
+      return res.status(400).json({ success: false, message: 'Enter a valid email address.' });
+    }
+    const user = await User.findOne({ email: rawEmail });
+    if (user) {
+      const otp = generateSixDigitOtp();
+      user.resetPasswordTokenHash = hashOtp(otp);
+      user.resetPasswordExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      await user.save();
+      const emailResult = await sendPasswordResetEmail({ to: user.email, name: user.name, otp });
+      if (!emailResult.sent) {
+        return res.status(502).json({
+          success: false,
+          message: emailResult.error?.message || 'Could not deliver reset email (check Resend domain settings).',
+        });
+      }
+    }
+    res.json({
+      success: true,
+      message: 'If an account exists for that email, a 6-digit password reset code has been sent.',
+    });
+  } catch (err) {
+    console.error('[Forgot Password Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to process password reset request.' });
+  }
+});
+
+// Reset password using 6-digit OTP
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const otp = typeof req.body?.otp === 'string' ? req.body.otp.trim() : '';
+    const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+    if (!/.+@.+\..+/.test(email) || !/^\d{6}$/.test(otp) || newPassword.length < 6 || newPassword.length > 128) {
+      return res.status(400).json({ success: false, message: 'Provide valid email, 6-digit code, and password (6+ characters).' });
+    }
+    const user = await User.findOne({ email });
+    if (!user || !user.resetPasswordTokenHash || !user.resetPasswordExpiresAt || user.resetPasswordExpiresAt < new Date()) {
+      return res.status(400).json({ success: false, message: 'Reset code is invalid or has expired.' });
+    }
+    if (hashOtp(otp) !== user.resetPasswordTokenHash) {
+      return res.status(400).json({ success: false, message: 'Invalid reset code.' });
+    }
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordTokenHash = undefined;
+    user.resetPasswordExpiresAt = undefined;
+    await user.save();
+    res.json({ success: true, message: 'Password updated successfully. You can now log in.' });
+  } catch (err) {
+    console.error('[Reset Password Error]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to reset password.' });
   }
 });
 

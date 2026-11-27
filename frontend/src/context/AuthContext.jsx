@@ -39,7 +39,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       const res = await axios.post(`${API_BASE}/api/auth/login`, credentials, { withCredentials: true });
-      if (res.data.success) {
+      if (res.data.success && !res.data.requiresOtp && res.data.user) {
         setUser(res.data.user);
         setIsAuthenticated(true);
       }
@@ -50,6 +50,41 @@ export const AuthProvider = ({ children }) => {
       throw new Error(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const verifyLoginOtp = async ({ challengeToken, otp }) => {
+    setLoading(true);
+    try {
+      const res = await axios.post(
+        `${API_BASE}/api/auth/verify-login-otp`,
+        { challengeToken, otp },
+        { withCredentials: true }
+      );
+      if (res.data.success && res.data.user) {
+        setUser(res.data.user);
+        setIsAuthenticated(true);
+      }
+      return res.data;
+    } catch (err) {
+      const message = err.response?.data?.message || 'Invalid login verification code.';
+      throw new Error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendLoginOtp = async ({ challengeToken }) => {
+    try {
+      const res = await axios.post(
+        `${API_BASE}/api/auth/resend-login-otp`,
+        { challengeToken },
+        { withCredentials: true }
+      );
+      return res.data;
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to resend login code.';
+      throw new Error(message);
     }
   };
 
@@ -97,6 +132,19 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  const verifyEmail = async (otp) => {
+    const res = await axios.post(`${API_BASE}/api/auth/verify-email`, { otp }, { withCredentials: true });
+    if (res.data.success && res.data.user) {
+      setUser(res.data.user);
+    }
+    return res.data;
+  };
+
+  const resendVerification = async () => {
+    const res = await axios.post(`${API_BASE}/api/auth/resend-verification`, {}, { withCredentials: true });
+    return res.data;
+  };
+
   const updateProviderSettings = async (settings) => {
     try {
       const res = await axios.patch(`${API_BASE}/api/provider/settings`, settings, { withCredentials: true });
@@ -116,10 +164,14 @@ export const AuthProvider = ({ children }) => {
     loading,
     isAuthenticated,
     login,
+    verifyLoginOtp,
+    resendLoginOtp,
     register,
     logout,
     refreshUser,
     updateUser,
+    verifyEmail,
+    resendVerification,
     updateProviderSettings,
   };
 

@@ -34,6 +34,13 @@ const userSchema = new mongoose.Schema({
   dateOfBirth: { type: Date },
   accountStatus: { type: String, enum: ['active', 'suspended'], default: 'active' },
   phoneVerified: { type: Boolean, default: false },
+  emailVerified: { type: Boolean }, // undefined on existing accounts -> treated as verified
+  emailVerifyCodeHash: { type: String },
+  emailVerifyExpiresAt: { type: Date },
+  resetPasswordTokenHash: { type: String },
+  resetPasswordExpiresAt: { type: Date },
+  loginOtpHash: { type: String },
+  loginOtpExpiresAt: { type: Date },
   profileImage: { type: String },
   address: {
     formattedAddress: { type: String },

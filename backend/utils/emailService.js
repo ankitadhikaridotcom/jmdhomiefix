@@ -176,9 +176,75 @@ async function sendCustomerBookingsListEmail({ to, customerName, bookings }) {
   });
 }
 
+async function sendVerificationOtpEmail({ to, name, otp }) {
+  if (!to || !otp) return { sent: false };
+  const bodyHtml = `
+    <div style="background: #f7f5f0; border: 1px solid #dedad0; border-radius: 12px; padding: 20px; text-align: center;">
+      <p style="margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #6a675f;">Your Verification Code</p>
+      <p style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #b3261e; font-family: monospace;">${escapeHtml(otp)}</p>
+      <p style="margin: 12px 0 0; font-size: 12px; color: #6a675f;">This code expires in 15 minutes.</p>
+    </div>
+  `;
+  return sendResendEmail({
+    to,
+    subject: 'Verify your Nivestry email address',
+    html: wrapEmailLayout(
+      'Verify Your Email',
+      `Hi ${name || 'there'}, enter this 6-digit verification code to confirm your Nivestry email address.`,
+      bodyHtml
+    ),
+    text: `Hi ${name || 'there'}, your Nivestry email verification code is ${otp}. It expires in 15 minutes.`,
+  });
+}
+
+async function sendPasswordResetEmail({ to, name, otp }) {
+  if (!to || !otp) return { sent: false };
+  const bodyHtml = `
+    <div style="background: #f7f5f0; border: 1px solid #dedad0; border-radius: 12px; padding: 20px; text-align: center;">
+      <p style="margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #6a675f;">Password Reset Code</p>
+      <p style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #1a1a18; font-family: monospace;">${escapeHtml(otp)}</p>
+      <p style="margin: 12px 0 0; font-size: 12px; color: #6a675f;">Valid for 15 minutes. If you didn't request this, ignore this email.</p>
+    </div>
+  `;
+  return sendResendEmail({
+    to,
+    subject: 'Nivestry Password Reset Code',
+    html: wrapEmailLayout(
+      'Reset Your Password',
+      `Hi ${name || 'there'}, use this 6-digit code to reset your Nivestry password.`,
+      bodyHtml
+    ),
+    text: `Hi ${name || 'there'}, your Nivestry password reset code is ${otp}. It expires in 15 minutes.`,
+  });
+}
+
+async function sendLoginOtpEmail({ to, name, otp }) {
+  if (!to || !otp) return { sent: false };
+  const bodyHtml = `
+    <div style="background: #f7f5f0; border: 1px solid #dedad0; border-radius: 12px; padding: 20px; text-align: center;">
+      <p style="margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #6a675f;">One-Time Login Security Code</p>
+      <p style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #b3261e; font-family: monospace;">${escapeHtml(otp)}</p>
+      <p style="margin: 12px 0 0; font-size: 12px; color: #6a675f;">Valid for 10 minutes. Do not share this code with anyone.</p>
+    </div>
+  `;
+  return sendResendEmail({
+    to,
+    subject: 'Your Nivestry Login Security Code',
+    html: wrapEmailLayout(
+      'Login Verification Code',
+      `Hi ${name || 'there'}, enter this 6-digit security code to complete your sign-in to Nivestry.`,
+      bodyHtml
+    ),
+    text: `Hi ${name || 'there'}, your Nivestry login security code is ${otp}. It expires in 10 minutes.`,
+  });
+}
+
 module.exports = {
   sendResendEmail,
   sendBookingConfirmationEmail,
   sendBookingCompletedEmail,
   sendCustomerBookingsListEmail,
+  sendVerificationOtpEmail,
+  sendPasswordResetEmail,
+  sendLoginOtpEmail,
 };

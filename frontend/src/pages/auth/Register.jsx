@@ -11,12 +11,16 @@ import { getDefaultRouteForUser } from '../../utils/authRedirect';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { register: createAccount, isAuthenticated, user } = useAuth();
+  const { register: createAccount, verifyEmail, resendVerification, isAuthenticated, user } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState(null);
+  const [otp, setOtp] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm();
 
-  if (isAuthenticated && user) {
+  if (isAuthenticated && user && !pendingVerification) {
     return <Navigate to={getDefaultRouteForUser(user)} replace />;
   }
 
@@ -24,12 +28,45 @@ const Register = () => {
     setIsLoading(true);
     try {
       const res = await createAccount({ name: name.trim(), email: email.trim(), password });
-      toast.success('Account created successfully!');
-      navigate(getDefaultRouteForUser(res?.user), { replace: true });
+      toast.success(res?.message || 'Account created successfully!');
+      if (res?.user && res.user.emailVerified === false) {
+        setPendingVerification({ email: res.user.email, emailSent: res.emailSent, user: res.user });
+      } else {
+        navigate(getDefaultRouteForUser(res?.user), { replace: true });
+      }
     } catch (err) {
       toast.error(err.message || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(otp.trim())) {
+      return toast.error('Enter the 6-digit verification code.');
+    }
+    setVerifying(true);
+    try {
+      const res = await verifyEmail(otp.trim());
+      toast.success(res.message || 'Email verified!');
+      navigate(getDefaultRouteForUser(res.user || pendingVerification?.user), { replace: true });
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Invalid verification code.');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setResending(true);
+    try {
+      const res = await resendVerification();
+      toast.success(res.message || 'Verification code sent!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Could not resend code.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -84,6 +121,65 @@ const Register = () => {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+            {pendingVerification ? (
+              <div className="space-y-5">
+                <div>
+                  <span className="inline-block px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold uppercase tracking-wider mb-3">
+                    Email Verification
+                  </span>
+                  <h2 className="text-2xl font-bold text-gray-900">Verify your email</h2>
+                  <p className="text-gray-500 text-sm mt-1">
+                    {pendingVerification.emailSent
+                      ? `We sent a 6-digit verification code to ${pendingVerification.email}.`
+                      : `Account created for ${pendingVerification.email}. Enter your code or click Resend Code.`}
+                  </p>
+                </div>
+
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <div>
+                    <label htmlFor="verify-otp" className="block text-sm font-medium text-gray-700 mb-1.5">
+                      6-Digit Verification Code
+                    </label>
+                    <input
+                      id="verify-otp"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      className="input-field text-center text-lg font-mono tracking-[0.4em]"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={verifying}
+                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {verifying ? <LoadingSpinner size="sm" /> : 'Verify Email & Continue'}
+                  </button>
+                </form>
+
+                <div className="flex items-center justify-between pt-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={resending}
+                    className="font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                  >
+                    {resending ? 'Sending...' : 'Resend Code'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate(getDefaultRouteForUser(pendingVerification.user), { replace: true })}
+                    className="font-semibold text-gray-500 hover:text-gray-800"
+                  >
+                    Verify later →
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
             <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
             <p className="text-gray-500 text-sm mt-1 mb-6">Sign up with your name, email, and password.</p>
 
@@ -162,6 +258,8 @@ const Register = () => {
               Already have an account?{' '}
               <Link to="/login" className="text-primary-600 font-semibold hover:text-primary-700">Log in</Link>
             </p>
+              </>
+            )}
           </div>
         </motion.div>
       </div>

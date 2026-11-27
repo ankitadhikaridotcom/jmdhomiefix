@@ -11,11 +11,20 @@ import { getDefaultRouteForUser } from '../../utils/authRedirect';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, isAuthenticated, user } = useAuth();
+  const { login, verifyLoginOtp, resendLoginOtp, isAuthenticated, user } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [otpChallenge, setOtpChallenge] = useState(null); // { challengeToken, email }
+  const [loginOtp, setLoginOtp] = useState('');
+  const [otpResending, setOtpResending] = useState(false);
+  const [resetMode, setResetMode] = useState(false); // false | 'request' | 'confirm'
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetOtp, setResetOtp] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm();
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   // If already authenticated, redirect to role's landing page
   if (isAuthenticated && user) {
@@ -26,12 +35,100 @@ const Login = () => {
     setIsLoading(true);
     try {
       const res = await login({ email: data.email, password: data.password });
-      toast.success('Welcome back! 🎉');
+      if (res?.requiresOtp && res?.challengeToken) {
+        setOtpChallenge({ challengeToken: res.challengeToken, email: res.email || data.email });
+        setLoginOtp('');
+        toast.success(res.message || 'Verification code sent to your email.');
+        return;
+      }
+      toast.success(res?.otpSkippedNote ? 'Welcome back!' : 'Welcome back! 🎉');
       navigate(getDefaultRouteForUser(res?.user), { replace: true });
     } catch (err) {
       toast.error(err.message || 'Invalid credentials. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerifyLoginOtp = async (e) => {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(loginOtp.trim())) {
+      return toast.error('Enter the 6-digit security code sent to your email.');
+    }
+    setIsLoading(true);
+    try {
+      const res = await verifyLoginOtp({
+        challengeToken: otpChallenge.challengeToken,
+        otp: loginOtp.trim(),
+      });
+      toast.success('Login verified! Welcome back 🎉');
+      navigate(getDefaultRouteForUser(res?.user), { replace: true });
+    } catch (err) {
+      toast.error(err.message || 'Invalid or expired security code.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendLoginOtp = async () => {
+    if (!otpChallenge?.challengeToken) return;
+    setOtpResending(true);
+    try {
+      const res = await resendLoginOtp({ challengeToken: otpChallenge.challengeToken });
+      toast.success(res.message || 'New code sent to your email.');
+    } catch (err) {
+      toast.error(err.message || 'Failed to resend code.');
+    } finally {
+      setOtpResending(false);
+    }
+  };
+
+  const handleRequestReset = async (e) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) return toast.error('Enter your account email.');
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Could not send reset code.');
+      toast.success(data.message || 'Reset code sent!');
+      setResetMode('confirm');
+    } catch (err) {
+      toast.error(err.message || 'Failed to send reset code.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleConfirmReset = async (e) => {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(resetOtp.trim())) return toast.error('Enter the 6-digit reset code.');
+    if (resetPassword.length < 6) return toast.error('Password must be at least 6 characters.');
+    setResetLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: resetEmail.trim(),
+          otp: resetOtp.trim(),
+          newPassword: resetPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to reset password.');
+      toast.success(data.message || 'Password updated! Please log in.');
+      setResetMode(false);
+      setResetOtp('');
+      setResetPassword('');
+    } catch (err) {
+      toast.error(err.message || 'Failed to reset password.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -100,6 +197,136 @@ const Login = () => {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+            {otpChallenge ? (
+              <div className="space-y-5">
+                <div>
+                  <span className="inline-block px-3 py-1 rounded-full bg-red-50 border border-red-200 text-[#b3261e] text-[11px] font-bold uppercase tracking-wider mb-3">
+                    2-Step Security Verification
+                  </span>
+                  <h2 className="text-2xl font-bold text-gray-900">Enter Login Code</h2>
+                  <p className="text-gray-500 text-sm mt-1">
+                    We sent a 6-digit security code to <strong>{otpChallenge.email}</strong>. Enter it below to complete sign-in.
+                  </p>
+                </div>
+
+                <form onSubmit={handleVerifyLoginOtp} className="space-y-4">
+                  <div>
+                    <label htmlFor="login-otp" className="block text-sm font-medium text-gray-700 mb-1.5">
+                      6-Digit Security Code
+                    </label>
+                    <input
+                      id="login-otp"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={loginOtp}
+                      onChange={(e) => setLoginOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      className="input-field text-center text-lg font-mono tracking-[0.4em]"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {isLoading ? <LoadingSpinner size="sm" /> : 'Verify & Sign In'}
+                  </button>
+                </form>
+
+                <div className="flex items-center justify-between pt-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleResendLoginOtp}
+                    disabled={otpResending}
+                    className="font-semibold text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                  >
+                    {otpResending ? 'Sending...' : 'Resend Code'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpChallenge(null);
+                      setLoginOtp('');
+                    }}
+                    className="font-semibold text-gray-500 hover:text-gray-800"
+                  >
+                    ← Use another account
+                  </button>
+                </div>
+              </div>
+            ) : resetMode ? (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Reset Password</h2>
+                  <p className="text-gray-500 text-sm mt-1">
+                    {resetMode === 'request'
+                      ? 'Enter your email to receive a 6-digit password reset code.'
+                      : `Enter the 6-digit code sent to ${resetEmail} and your new password.`}
+                  </p>
+                </div>
+
+                {resetMode === 'request' ? (
+                  <form onSubmit={handleRequestReset} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                      <input
+                        type="email"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        placeholder="Enter your email"
+                        className="input-field"
+                        required
+                      />
+                    </div>
+                    <button type="submit" disabled={resetLoading} className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60">
+                      {resetLoading ? <LoadingSpinner size="sm" /> : 'Send Reset Code'}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleConfirmReset} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">6-Digit Code</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={resetOtp}
+                        onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="000000"
+                        className="input-field text-center font-mono tracking-[0.35em]"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">New Password</label>
+                      <input
+                        type="password"
+                        value={resetPassword}
+                        onChange={(e) => setResetPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        className="input-field"
+                        required
+                      />
+                    </div>
+                    <button type="submit" disabled={resetLoading} className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60">
+                      {resetLoading ? <LoadingSpinner size="sm" /> : 'Update Password'}
+                    </button>
+                  </form>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setResetMode(false)}
+                  className="text-xs font-semibold text-gray-500 hover:text-gray-800"
+                >
+                  ← Back to Login
+                </button>
+              </div>
+            ) : (
+              <>
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-gray-900">Welcome Back</h2>
               <p className="text-gray-500 text-sm mt-1">Login to your Nivestry account</p>
@@ -128,7 +355,16 @@ const Login = () => {
 
               {/* Password */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-gray-700">Password</label>
+                  <button
+                    type="button"
+                    onClick={() => setResetMode('request')}
+                    className="text-xs font-semibold text-primary-600 hover:text-primary-700"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="relative">
                   <FaLock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
                   <input
@@ -170,6 +406,8 @@ const Login = () => {
                 Sign Up
               </Link>
             </p>
+              </>
+            )}
           </div>
         </motion.div>
       </div>

@@ -10,10 +10,13 @@ import { detectCurrentLocation } from '../../utils/locationDetect';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const CustomerProfile = () => {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, verifyEmail, resendVerification } = useAuth();
   const [editing, setEditing] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [verifyOtp, setVerifyOtp] = useState('');
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [resendingCode, setResendingCode] = useState(false);
   const fileInputRef = useRef(null);
 
   const { register, handleSubmit, reset, setValue } = useForm({
@@ -101,6 +104,72 @@ const CustomerProfile = () => {
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">My Profile</h1>
           <p className="text-gray-500 text-sm mt-1">Manage your account settings</p>
         </motion.div>
+
+        {user?.emailVerified === false && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-amber-950 text-sm">Verify your email address</h3>
+                <p className="text-xs text-amber-800 mt-0.5">
+                  Enter the 6-digit verification code sent to <strong>{user.email}</strong> via Resend.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={resendingCode}
+                onClick={async () => {
+                  setResendingCode(true);
+                  try {
+                    const res = await resendVerification();
+                    toast.success(res.message || 'Verification code sent!');
+                  } catch (err) {
+                    toast.error(err.response?.data?.message || err.message || 'Failed to resend code.');
+                  } finally {
+                    setResendingCode(false);
+                  }
+                }}
+                className="text-xs font-bold text-amber-900 underline hover:text-amber-950 disabled:opacity-50"
+              >
+                {resendingCode ? 'Sending...' : 'Resend Code'}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={verifyOtp}
+                onChange={(e) => setVerifyOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6-digit OTP"
+                className="px-3.5 py-2 rounded-xl border border-amber-300 bg-white text-sm font-mono tracking-widest w-36 outline-none"
+              />
+              <button
+                type="button"
+                disabled={verifyingEmail}
+                onClick={async () => {
+                  if (!/^\d{6}$/.test(verifyOtp.trim())) return toast.error('Enter a valid 6-digit code.');
+                  setVerifyingEmail(true);
+                  try {
+                    const res = await verifyEmail(verifyOtp.trim());
+                    toast.success(res.message || 'Email verified!');
+                    setVerifyOtp('');
+                  } catch (err) {
+                    toast.error(err.response?.data?.message || err.message || 'Invalid verification code.');
+                  } finally {
+                    setVerifyingEmail(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold transition disabled:opacity-60"
+              >
+                {verifyingEmail ? 'Verifying...' : 'Verify Email'}
+              </button>
+            </div>
+          </motion.div>
+        )}
 
         {user?.role !== 'admin' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
