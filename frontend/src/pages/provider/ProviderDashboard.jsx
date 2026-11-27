@@ -30,7 +30,7 @@ import { useAuth } from '../../context/AuthContext';
 import LeafletMap from '../../components/common/LeafletMap';
 import toast from 'react-hot-toast';
 
-const API = 'http://localhost:5000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const StatCard = ({ title, value, subtitle, icon: Icon, color, index }) => {
   const badgeStyles = {
@@ -61,7 +61,7 @@ const StatCard = ({ title, value, subtitle, icon: Icon, color, index }) => {
 };
 
 const ProviderDashboard = () => {
-  const { user, updateProviderSettings, updateUser } = useAuth();
+  const { user, updateProviderSettings, refreshUser } = useAuth();
   const [stats, setStats] = useState({ totalBookings: 0, completedJobs: 0, thisMonthEarnings: 0, avgRating: 0, pendingBookings: 0, activeBookings: 0 });
   const [upcomingBookings, setUpcomingBookings] = useState([]);
   const [pendingBookings, setPendingBookings] = useState([]);
@@ -225,7 +225,7 @@ const ProviderDashboard = () => {
       if (data.success) {
         toast.success('✅ Location saved!');
         setIsEditingLocation(false);
-        if (updateUser) updateUser(data.user);
+        if (refreshUser) await refreshUser().catch(() => {});
         loadDashboardData();
       } else toast.error(data.message || 'Failed to save location');
     } catch (e) { toast.error('Network error saving location'); }
@@ -362,7 +362,7 @@ const ProviderDashboard = () => {
             </label>
           </div>
 
-          <Link to="/provider/services"
+          <Link to="/provider/add-service"
             className="flex items-center gap-2 px-4 py-2.5 bg-[#0EA5E9] hover:bg-[#0284C7] text-white rounded-xl text-xs md:text-sm font-bold transition shadow-xs">
             <Plus className="w-4 h-4" />
             <span>Add Service</span>
@@ -658,10 +658,13 @@ const ProviderDashboard = () => {
               {myServices.length > 0 ? myServices.map(service => (
                 <div key={service._id} className="px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition">
                   <div className="flex items-center gap-3 min-w-0">
-                    <img src={service.image} alt={service.name} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                    <img src={service.image || '/deep-home-cleaning.jpg'} alt={service.name} className="w-8 h-8 rounded-lg object-cover shrink-0 bg-slate-100" />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-900 truncate">{service.name}</p>
-                      <p className="text-[11px] text-slate-400 font-mono">₹{service.price}{service.pricingType === 'hourly' ? '/hr' : ''}</p>
+                      <p className="text-[11px] text-slate-400 font-mono">
+                        ₹{service.price}{service.pricingType === 'hourly' ? '/hr' : ''}
+                        {service.address?.pincode ? ` · ${service.address.pincode}` : ''}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -681,7 +684,7 @@ const ProviderDashboard = () => {
               )) : (
                 <div className="p-6 text-center">
                   <p className="text-xs text-slate-400">No services listed yet.</p>
-                  <Link to="/provider/services" className="text-xs text-[#0284C7] font-semibold mt-1 inline-block">+ Add Service</Link>
+                  <Link to="/provider/add-service" className="text-xs text-[#0284C7] font-semibold mt-1 inline-block">+ Add Service</Link>
                 </div>
               )}
             </div>

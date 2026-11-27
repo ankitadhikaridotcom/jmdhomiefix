@@ -556,7 +556,7 @@ const Navbar = () => {
                               </>
                             )}
 
-                            {user?.role === 'customer' && (
+                            {(user?.role === 'customer' || providerApproved) && (
                               <>
                                 <Link
                                   to="/my-bookings"
@@ -582,23 +582,14 @@ const Navbar = () => {
                               </>
                             )}
 
-                            {user?.role === 'provider' && (
-                              <>
-                                <Link
-                                  to="/provider"
-                                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium transition-colors"
-                                >
-                                  <LayoutDashboard className="w-4 h-4 text-slate-400" />
-                                  <span>Dashboard</span>
-                                </Link>
-                                <Link
-                                  to="/provider/bookings"
-                                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium transition-colors"
-                                >
-                                  <Calendar className="w-4 h-4 text-slate-400" />
-                                  <span>Bookings Queue</span>
-                                </Link>
-                              </>
+                            {providerApproved && (
+                              <Link
+                                to="/provider/bookings"
+                                className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium transition-colors"
+                              >
+                                <ClipboardList className="w-4 h-4 text-slate-400" />
+                                <span>Provider Jobs Queue</span>
+                              </Link>
                             )}
 
                             {user?.role === 'admin' && (
@@ -721,7 +712,7 @@ const Navbar = () => {
                       <span>Help & FAQs</span>
                     </Link>
 
-                    {user?.role === 'customer' && (
+                    {(user?.role === 'customer' || providerApproved) && (
                       <>
                         <Link to="/my-bookings" className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-slate-700 hover:bg-slate-50 text-sm font-semibold">
                           <Calendar className="w-4 h-4 text-slate-400" />
@@ -794,7 +785,7 @@ const Navbar = () => {
       </AnimatePresence>
 
       {/* Mobile Bottom Navigation */}
-      {isAuthenticated && user?.role === 'customer' && (
+      {isAuthenticated && (user?.role === 'customer' || providerApproved) && (
         <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 z-40 md:hidden shadow-lg">
           <div className="flex items-center justify-around py-2">
             {[

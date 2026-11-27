@@ -17,6 +17,8 @@ import { useAuth } from '../../context/AuthContext';
 import { ServiceCardSkeleton } from '../../components/common/ui/Skeleton';
 import EmptyState from '../../components/common/ui/EmptyState';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const defaultCategories = [
   'Home Cleaning', 'Plumber', 'Electrician', 'Painting', 'Carpenter', 'Appliance Repair', 'AC Repair', 'Pest Control', 'Salon at Home'
 ];
@@ -29,7 +31,7 @@ const Services = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || '');
-  const [sortBy, setSortBy] = useState('popular');
+  const [sortBy, setSortBy] = useState('recommended');
   const [currentPage, setCurrentPage] = useState(1);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
@@ -37,7 +39,7 @@ const Services = () => {
 
   // Load real active categories
   useEffect(() => {
-    fetch('http://localhost:5000/api/service-categories')
+    fetch(`${API}/api/service-categories`)
       .then(res => res.json())
       .then(data => {
         if (data.success && Array.isArray(data.categories)) {
@@ -89,15 +91,21 @@ const Services = () => {
     const timer = setTimeout(() => {
       let endpoint = '';
       if (userLocation?.latitude && userLocation?.longitude) {
-        endpoint = `http://localhost:5000/api/providers/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}`;
-        if (selectedCategory) endpoint += `&category=${encodeURIComponent(selectedCategory)}`;
-        if (search) endpoint += `&search=${encodeURIComponent(search)}`;
+        const params = new URLSearchParams({
+          lat: String(userLocation.latitude),
+          lng: String(userLocation.longitude),
+        });
+        if (userLocation.pincode) params.append('pincode', userLocation.pincode);
+        if (selectedCategory) params.append('category', selectedCategory);
+        if (search) params.append('search', search);
+        if (sortBy && sortBy !== 'recommended') params.append('sort', sortBy);
+        endpoint = `${API}/api/providers/nearby?${params.toString()}`;
       } else {
         const queryParams = new URLSearchParams();
         if (selectedCategory) queryParams.append('category', selectedCategory);
         if (search) queryParams.append('search', search);
-        if (sortBy) queryParams.append('sort', sortBy);
-        endpoint = `http://localhost:5000/api/services?${queryParams.toString()}`;
+        if (sortBy && sortBy !== 'recommended') queryParams.append('sort', sortBy);
+        endpoint = `${API}/api/services?${queryParams.toString()}`;
       }
 
       fetch(endpoint)
@@ -203,7 +211,7 @@ const Services = () => {
                 type="text"
                 value={search}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Search services (e.g. Electrician, AC Repair, Cleaning)..."
+                placeholder="Search services, PIN code, city (e.g. Electrician, 263139, Cleaning)..."
                 className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-[#0EA5E9] focus:ring-2 focus:ring-[#0EA5E9]/20 outline-none transition"
               />
               {search && (
@@ -224,8 +232,9 @@ const Services = () => {
                 onChange={(e) => setSortBy(e.target.value)}
                 className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm font-semibold text-slate-700 outline-none focus:border-[#0EA5E9] focus:ring-2 focus:ring-[#0EA5E9]/20 transition cursor-pointer"
               >
-                <option value="popular">Sort: Most Popular</option>
+                <option value="recommended">Sort: Recommended & Nearby</option>
                 <option value="newest">Sort: Newly Added</option>
+                <option value="popular">Sort: Most Popular</option>
                 <option value="price-low">Price: Low to High</option>
                 <option value="price-high">Price: High to Low</option>
                 <option value="rating">Highest Rated</option>

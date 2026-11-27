@@ -123,10 +123,10 @@ const ManageProviders = () => {
                   <td className="table-cell text-gray-400">{i + 1}</td>
                   <td className="table-cell">
                     <div className="flex items-center gap-3">
-                      <img src={p.avatar} alt="" className="w-10 h-10 rounded-full object-cover" />
+                      <img src={p.avatar || '/deep-home-cleaning.jpg'} alt="" className="w-10 h-10 rounded-full object-cover bg-gray-100" />
                       <div>
                         <p className="font-medium text-gray-900">{p.name}</p>
-                        <p className="text-xs text-gray-400">{p.location}</p>
+                        <p className="text-xs text-gray-400">{p.location || p.city || 'Location not set'}{p.pincode ? ` (${p.pincode})` : ''}</p>
                       </div>
                     </div>
                   </td>

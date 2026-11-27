@@ -30,6 +30,8 @@ import LocationModal from '../../components/common/LocationModal';
 import { ServiceCardSkeleton } from '../../components/common/ui/Skeleton';
 import { useAuth } from '../../context/AuthContext';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const categoryIcons = {
   Electrician: Zap,
   Plumber: Droplets,
@@ -145,6 +147,7 @@ const Home = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchContainerRef = useRef(null);
   const [services, setServices] = useState([]);
+  const [latestServices, setLatestServices] = useState([]);
   const [categories, setCategories] = useState([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
@@ -160,7 +163,7 @@ const Home = () => {
     }
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/services?search=${encodeURIComponent(searchQuery.trim())}`);
+        const res = await fetch(`${API}/api/services?search=${encodeURIComponent(searchQuery.trim())}`);
         const data = await res.json();
         if (data.success && Array.isArray(data.services)) {
           setSuggestions(data.services.slice(0, 5));
@@ -184,7 +187,7 @@ const Home = () => {
   }, []);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/service-categories')
+    fetch(`${API}/api/service-categories`)
       .then((response) => response.json())
       .then((data) => {
         if (data.success) {
@@ -198,6 +201,15 @@ const Home = () => {
         }
       })
       .catch((error) => console.error('Failed to load service categories', error));
+
+    fetch(`${API}/api/services?sort=newest`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.services)) {
+          setLatestServices(data.services);
+        }
+      })
+      .catch((error) => console.error('Failed to load latest services', error));
   }, []);
 
   useEffect(() => {
@@ -212,7 +224,7 @@ const Home = () => {
         pincode: user.address.pincode || '',
       };
       setUserLocation(location);
-      fetchNearbyServices(location.latitude, location.longitude);
+      fetchNearbyServices(location.latitude, location.longitude, location.pincode);
     } else {
       try {
         const savedLoc = localStorage.getItem('nivestry_user_location') || localStorage.getItem('homiefix_user_location');
@@ -220,7 +232,7 @@ const Home = () => {
           const parsed = JSON.parse(savedLoc);
           if (parsed?.latitude && parsed?.longitude) {
             setUserLocation(parsed);
-            fetchNearbyServices(parsed.latitude, parsed.longitude);
+            fetchNearbyServices(parsed.latitude, parsed.longitude, parsed.pincode);
             return;
           }
         }
@@ -236,7 +248,7 @@ const Home = () => {
       setRecentBookings([]);
       return;
     }
-    fetch('http://localhost:5000/api/bookings', { credentials: 'include' })
+    fetch(`${API}/api/bookings`, { credentials: 'include' })
       .then((response) => response.json())
       .then((data) => {
         if (data.success) setRecentBookings((data.bookings || []).slice(0, 2));
@@ -246,7 +258,7 @@ const Home = () => {
 
   const fetchDefaultServices = () => {
     setServicesLoading(true);
-    fetch('http://localhost:5000/api/services')
+    fetch(`${API}/api/services?sort=newest`)
       .then((response) => response.json())
       .then((data) => {
         if (data.success && data.services) setServices(data.services);
@@ -255,9 +267,10 @@ const Home = () => {
       .finally(() => setServicesLoading(false));
   };
 
-  const fetchNearbyServices = (latitude, longitude) => {
+  const fetchNearbyServices = (latitude, longitude, pincode = '') => {
     setServicesLoading(true);
-    fetch(`http://localhost:5000/api/providers/nearby?lat=${latitude}&lng=${longitude}`)
+    const pinParam = pincode ? `&pincode=${encodeURIComponent(pincode)}` : '';
+    fetch(`${API}/api/providers/nearby?lat=${latitude}&lng=${longitude}${pinParam}`)
       .then((response) => response.json())
       .then((data) => {
         if (data.success && data.services?.length) {
@@ -282,8 +295,30 @@ const Home = () => {
 
   const handleLocationSelected = (location) => {
     setUserLocation(location);
-    fetchNearbyServices(location.latitude, location.longitude);
+    fetchNearbyServices(location.latitude, location.longitude, location.pincode);
   };
+
+  const recommendedServices = services.slice(0, 8);
+  const displayedServiceIds = new Set(recommendedServices.map((s) => s.id || s._id));
+  const newlyListedOtherServices = latestServices
+    .filter((svc) => !displayedServiceIds.has(svc.id || svc._id))
+    .slice(0, 4);
+
+  const catalogForCategoryStats = latestServices.length > 0 ? latestServices : services;
+  const categoryStats = catalogForCategoryStats.reduce((acc, svc) => {
+    const key = svc.category;
+    if (!key) return acc;
+    const price = Number(svc.price || svc.fixedPrice || svc.inspectionFee || svc.visitFee || 0);
+    if (!acc[key]) {
+      acc[key] = { count: 1, minPrice: price > 0 ? price : null };
+    } else {
+      acc[key].count += 1;
+      if (price > 0 && (acc[key].minPrice === null || price < acc[key].minPrice)) {
+        acc[key].minPrice = price;
+      }
+    }
+    return acc;
+  }, {});
 
   return (
     <div className="home-page min-h-screen bg-[#f7f5f0] text-[#1a1a18]">
@@ -517,7 +552,9 @@ const Home = () => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 lg:gap-5">
             {categories.map(({ name, icon: Icon }) => {
               const meta = categoryMeta[name] || {};
+              const stats = categoryStats[name];
               const iconColors = categoryIconBg[name] || 'bg-slate-100 text-slate-600';
+              const displayStartsAt = stats?.minPrice ?? meta.startsAt ?? 199;
               return (
                 <Link
                   key={name}
@@ -530,11 +567,15 @@ const Home = () => {
                       <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconColors} transition group-hover:scale-105`}>
                         <Icon className="w-6 h-6 stroke-[1.8]" />
                       </span>
-                      {meta.badge && (
+                      {meta.badge ? (
                         <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide ${meta.badge.color}`}>
                           {meta.badge.text}
                         </span>
-                      )}
+                      ) : stats?.count ? (
+                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide bg-slate-100 text-slate-700">
+                          {stats.count} {stats.count === 1 ? 'service' : 'services'}
+                        </span>
+                      ) : null}
                     </div>
 
                     {/* Title */}
@@ -552,7 +593,7 @@ const Home = () => {
                   <div className="mt-5 flex items-center justify-between pt-2">
                     <span className="text-xs font-medium text-[#6a675f]">Starts at</span>
                     <span className="text-base font-bold text-[#1a1a18]">
-                      ₹{meta.startsAt || 199}
+                      ₹{displayStartsAt}
                     </span>
                   </div>
                 </Link>
@@ -623,9 +664,35 @@ const Home = () => {
             </div>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {services.slice(0, 4).map((service, index) => (
+              {recommendedServices.map((service, index) => (
                 <ServiceCard key={service.id || service._id || index} service={service} index={index} />
               ))}
+            </div>
+          )}
+
+          {newlyListedOtherServices.length > 0 && (
+            <div className="mt-14 pt-10 border-t border-[#dedad0]">
+              <div className="mb-8 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#b3261e]">Fresh From Providers</p>
+                  <h3 className="mt-1.5 text-xl sm:text-2xl font-extrabold text-[#1a1a18] tracking-tight">
+                    Newly Listed Services
+                  </h3>
+                  <p className="mt-1 text-sm text-[#6a675f]">Recently published offerings across Nivestry.</p>
+                </div>
+                <Link
+                  to="/services"
+                  className="hidden sm:inline-flex items-center gap-1.5 text-sm font-bold text-[#b3261e] hover:text-[#9c2019] transition group"
+                >
+                  <span>Explore All</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              </div>
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                {newlyListedOtherServices.map((service, index) => (
+                  <ServiceCard key={service.id || service._id || index} service={service} index={index} />
+                ))}
+              </div>
             </div>
           )}
         </div>

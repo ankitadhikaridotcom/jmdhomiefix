@@ -86,6 +86,11 @@ const Booking = () => {
             setValue('address', defaultAddr.address || '');
             setValue('city', defaultAddr.city || '');
             setValue('pincode', defaultAddr.pincode || '');
+            setValue('locality', defaultAddr.locality || '');
+            setValue('state', defaultAddr.state || '');
+            setValue('formattedAddress', defaultAddr.address || '');
+            setValue('latitude', defaultAddr.latitude ?? '');
+            setValue('longitude', defaultAddr.longitude ?? '');
           }
         }
       })
@@ -114,6 +119,11 @@ const Booking = () => {
             setValue('address', data.formattedAddress || `${data.locality || ''}, ${data.city || ''}`);
             setValue('city', data.city || data.locality || '');
             setValue('pincode', data.pincode || '');
+            setValue('locality', data.locality || '');
+            setValue('state', data.state || '');
+            setValue('formattedAddress', data.formattedAddress || '');
+            setValue('latitude', pos.coords.latitude);
+            setValue('longitude', pos.coords.longitude);
             setSelectedAddressId(null);
             setSearchQuery(data.formattedAddress || `${data.city}, ${data.state}`);
             toast.success(`Location detected: ${data.city || data.locality || 'Address filled'}`, { id: toastId });
@@ -169,6 +179,11 @@ const Booking = () => {
     setValue('address', item.formattedAddress || item.locality || item.city);
     setValue('city', item.city || item.locality || '');
     setValue('pincode', item.pincode || '');
+    setValue('locality', item.locality || '');
+    setValue('state', item.state || '');
+    setValue('formattedAddress', item.formattedAddress || '');
+    setValue('latitude', item.latitude ?? '');
+    setValue('longitude', item.longitude ?? '');
     setSearchQuery(item.formattedAddress || `${item.city}, ${item.state}`);
     setSearchResults([]);
     setShowSearchDropdown(false);
@@ -181,6 +196,11 @@ const Booking = () => {
     setValue('address', addr.address || '');
     setValue('city', addr.city || '');
     setValue('pincode', addr.pincode || '');
+    setValue('locality', addr.locality || '');
+    setValue('state', addr.state || '');
+    setValue('formattedAddress', addr.address || '');
+    setValue('latitude', addr.latitude ?? '');
+    setValue('longitude', addr.longitude ?? '');
     toast.success(`Using "${addr.label}" address`);
   };
 
@@ -288,6 +308,11 @@ const Booking = () => {
           duration, paymentMethod,
           address: formValues.address || '', city: formValues.city || '',
           pincode: formValues.pincode || '', landmark: formValues.landmark || '',
+          locality: formValues.locality || '', state: formValues.state || '',
+          formattedAddress: formValues.formattedAddress || formValues.address || '',
+          ...(formValues.latitude !== '' && formValues.latitude !== undefined && formValues.longitude !== '' && formValues.longitude !== undefined
+            ? { latitude: Number(formValues.latitude), longitude: Number(formValues.longitude) }
+            : {}),
           description: formValues.description || '',
         })
       });

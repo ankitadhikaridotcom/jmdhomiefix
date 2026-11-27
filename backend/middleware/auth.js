@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { isApprovedProvider } = require('../utils/serviceHelpers');
 
 // Middleware to verify JWT from HTTP-only cookie
 const requireAuth = async (req, res, next) => {
@@ -27,6 +28,7 @@ const requireAuth = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'This provider account is suspended.' });
     }
 
+    const approvedProvider = isApprovedProvider(user);
     req.user = {
       id: user._id.toString(),
       role: user.role,
@@ -34,6 +36,8 @@ const requireAuth = async (req, res, next) => {
         ? (user.providerStatus === 'not_applied' ? user.verificationStatus : user.providerStatus)
         : user.providerStatus,
       verificationStatus: user.verificationStatus,
+      accountStatus: user.accountStatus,
+      isApprovedProvider: approvedProvider,
       email: decoded.email,
     };
     return next();
@@ -48,14 +52,11 @@ const requireRole = (role) => {
     if (!req.user) {
       return res.status(401).json({ success: false, message: 'Unauthenticated.' });
     }
-    const isLegacyApprovedProvider = req.user.role === 'provider'
-      && (req.user.providerStatus === 'approved'
-        || (req.user.providerStatus === 'not_applied' && req.user.verificationStatus === 'approved'));
-    const isApprovedProvider = req.user.providerStatus === 'approved' || isLegacyApprovedProvider;
+    const approvedProvider = Boolean(req.user.isApprovedProvider || isApprovedProvider(req.user));
     const authorized = role === 'provider'
-      ? isApprovedProvider
+      ? approvedProvider
       : role === 'customer'
-        ? req.user.role === 'customer' || isLegacyApprovedProvider
+        ? req.user.role === 'customer' || approvedProvider
         : req.user.role === role;
     if (!authorized) {
       return res.status(403).json({ success: false, message: 'Forbidden: insufficient role.' });

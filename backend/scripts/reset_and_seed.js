@@ -357,6 +357,11 @@ async function run() {
   await Service.deleteMany({});
   const servicesToInsert = canonicalServices.map((svc) => ({
     ...svc,
+    serviceKind: svc.pricingType === 'inspection' ? 'Inspection & Consultation' : svc.pricingType === 'hourly' ? 'Repair & Troubleshooting' : 'Full Package',
+    address: { ...provider.address },
+    location: { ...provider.location },
+    serviceRadius: provider.serviceRadius,
+    serviceAreas: [...provider.serviceAreas],
     provider: provider._id,
     isActive: true,
     createdAt: new Date(),

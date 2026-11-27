@@ -5,21 +5,21 @@ const User = require('../models/User');
 const Service = require('../models/Service');
 const ServiceCategory = require('../models/ServiceCategory');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const {
+  CATEGORY_ALIASES,
+  escapeRegex,
+  isValidCoordinate,
+  isApprovedProvider,
+  haversineKm,
+  resolveServiceCoordinates,
+  mapService,
+  buildServiceSearchClauses,
+  sortServices,
+} = require('../utils/serviceHelpers');
 
 // In-memory cache for Nominatim requests to strictly respect usage policies
 const geocodeCache = new Map();
 const searchCache = new Map();
-const isValidCoordinate = (latitude, longitude) => (
-  latitude !== undefined && latitude !== null && latitude !== ''
-  && longitude !== undefined && longitude !== null && longitude !== ''
-  && Number.isFinite(Number(latitude))
-  && Number.isFinite(Number(longitude))
-  && Number(latitude) >= -90
-  && Number(latitude) <= 90
-  && Number(longitude) >= -180
-  && Number(longitude) <= 180
-);
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const isPrivateOrLoopbackIp = (ip) => {
   if (!ip) return true;
@@ -326,10 +326,10 @@ router.post('/current', requireAuth, async (req, res) => {
   }
 });
 
-// 4. GET /api/providers/nearby - Geospatial search using $geoNear with fallback for all services
+// 4. GET /api/providers/nearby - Geospatial search using service & provider coordinates with newest-first fallback
 router.get('/nearby', async (req, res) => {
   try {
-    const { lat, lng, latitude, longitude, maxDistance, category, search, serviceId } = req.query;
+    const { lat, lng, latitude, longitude, maxDistance, category, search, serviceId, pincode, sort } = req.query;
 
     const rawLat = lat !== undefined ? lat : latitude;
     const rawLng = lng !== undefined ? lng : longitude;
@@ -362,6 +362,8 @@ router.get('/nearby', async (req, res) => {
               spherical: true,
               maxDistance: maxKm * 1000,
               query: {
+                accountStatus: { $ne: 'suspended' },
+                verificationStatus: { $ne: 'suspended' },
                 $or: [
                   { providerStatus: 'approved' },
                   { role: 'provider', providerStatus: 'not_applied', verificationStatus: 'approved' },
@@ -383,7 +385,7 @@ router.get('/nearby', async (req, res) => {
     }
 
     const providerMap = new Map();
-    providers.forEach(p => providerMap.set(p._id.toString(), p));
+    providers.forEach((p) => providerMap.set(p._id.toString(), p));
 
     // Build service query
     const serviceQuery = { isActive: true };
@@ -396,31 +398,6 @@ router.get('/nearby', async (req, res) => {
       }
       serviceQuery._id = serviceId;
     }
-    const CATEGORY_ALIASES = {
-      plumbing: 'Plumber',
-      plumber: 'Plumber',
-      electrical: 'Electrician',
-      electrician: 'Electrician',
-      electric: 'Electrician',
-      cleaning: 'Home Cleaning',
-      clean: 'Home Cleaning',
-      'home cleaning': 'Home Cleaning',
-      house: 'Home Cleaning',
-      carpentry: 'Carpenter',
-      carpenter: 'Carpenter',
-      appliances: 'Appliance Repair',
-      appliance: 'Appliance Repair',
-      'appliance repair': 'Appliance Repair',
-      painting: 'Painting',
-      paint: 'Painting',
-      painter: 'Painting',
-      'pest control': 'Pest Control',
-      pest: 'Pest Control',
-      'salon at home': 'Salon at Home',
-      salon: 'Salon at Home',
-      'ac repair': 'AC Repair',
-      ac: 'AC Repair',
-    };
 
     if (category && category.trim()) {
       const catTrim = category.trim().toLowerCase();
@@ -429,117 +406,75 @@ router.get('/nearby', async (req, res) => {
     }
 
     if (search && search.trim()) {
-      const cleanSearch = search.trim();
-      const terms = cleanSearch.toLowerCase().split(/\s+/).filter(Boolean);
-      const orClauses = [];
-
-      // Exact phrase match
-      const phraseRegex = new RegExp(escapeRegex(cleanSearch), 'i');
-      orClauses.push({ name: phraseRegex }, { category: phraseRegex }, { description: phraseRegex });
-
-      // Individual terms
-      terms.forEach((term) => {
-        const termRegex = new RegExp(escapeRegex(term), 'i');
-        orClauses.push({ name: termRegex }, { category: termRegex }, { description: termRegex });
-        if (CATEGORY_ALIASES[term]) {
-          const catName = CATEGORY_ALIASES[term];
-          orClauses.push({ category: new RegExp(`^${escapeRegex(catName)}$`, 'i') });
-        }
-      });
-
-      // Special domain keywords
-      if (/fan|switch|breaker|mcb|wire|wiring|inverter|short/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Electrician$', 'i') });
-      }
-      if (/pipe|tap|drain|leak|water|flush|basin/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Plumber$', 'i') });
-      }
-      if (/wood|furniture|door|lock|table|chair|bed/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Carpenter$', 'i') });
-      }
-      if (/wash|mop|dust|vacuum|maid|sofa|carpet/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Home Cleaning$', 'i') });
-      }
-      if (/cooling|filter|gas|compressor/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^(AC Repair|Appliance Repair)$', 'i') });
-      }
-
-      serviceQuery.$or = orClauses;
+      serviceQuery.$or = buildServiceSearchClauses(search);
     }
 
     const services = await Service.find(serviceQuery)
-      .populate('provider', 'name phone profileImage location address serviceRadius role providerStatus verificationStatus');
+      .sort({ createdAt: -1 })
+      .populate('provider', 'name phone profileImage profession experience location address serviceRadius serviceAreas role providerStatus verificationStatus accountStatus');
     const activeCategories = new Set(await ServiceCategory.distinct('name', { isActive: true }));
 
     const nearbyServices = [];
     const otherServices = [];
+    const cleanPincode = typeof pincode === 'string' ? pincode.trim() : '';
 
-    services.forEach(s => {
-      if (!s.provider || !(
-        s.provider.providerStatus === 'approved'
-        || (s.provider.role === 'provider'
-          && s.provider.providerStatus === 'not_applied'
-          && s.provider.verificationStatus === 'approved')
-      ) || !activeCategories.has(s.category)) return;
+    services.forEach((s) => {
+      if (!isApprovedProvider(s.provider) || !activeCategories.has(s.category)) return;
+
       const providerIdStr = (s.provider._id || s.provider).toString();
-      const providerData = providerMap.get(providerIdStr);
+      const providerAgg = providerMap.get(providerIdStr);
+      const effectiveCoords = resolveServiceCoordinates(s);
+      const effectiveRadius = s.serviceRadius || s.provider.serviceRadius || 10;
+      const thresholdKm = maxDistance !== undefined ? maxKm : effectiveRadius;
 
-      const serviceObj = {
-        id: s._id.toString(),
-        name: s.name,
-        category: s.category,
-        description: s.description || '',
-        price: s.basePrice,
-        pricingType: s.pricingType,
-        fixedPrice: s.fixedPrice || null,
-        inspectionFee: s.inspectionFee || null,
-        visitFee: s.visitFee || null,
-        hourlyRate: s.hourlyRate || null,
-        image: s.image || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=400&h=300&fit=crop',
-        provider: {
-          id: providerIdStr,
-          name: s.provider.name || 'Provider',
-          phone: s.provider.phone || '',
-          profileImage: s.provider.profileImage || '',
-          serviceRadius: s.provider.serviceRadius || 10,
-          address: s.provider.address,
-          location: s.provider.location,
-        },
-        rating: 4.8,
-        reviewCount: 12,
-        createdAt: s.createdAt || null,
-        isNew: Boolean(s.createdAt && (Date.now() - new Date(s.createdAt).getTime()) < 14 * 24 * 60 * 60 * 1000),
-      };
+      let computedDistance = null;
+      if (hasCoordinates && effectiveCoords) {
+        computedDistance = Math.round(haversineKm(customerLat, customerLng, effectiveCoords[1], effectiveCoords[0]) * 10) / 10;
+      } else if (providerAgg && providerAgg.distanceInKm !== undefined) {
+        computedDistance = providerAgg.distanceInKm;
+      }
 
-      if (providerData && providerData.distanceInKm !== undefined) {
-        serviceObj.distance = providerData.distanceInKm;
-        if (providerData.distanceInKm <= (s.provider.serviceRadius || 10)) {
-          nearbyServices.push(serviceObj);
-        } else {
-          serviceObj.distance = null;
-          otherServices.push(serviceObj);
-        }
+      const matchesPincode = Boolean(
+        cleanPincode
+        && ((s.address?.pincode && s.address.pincode === cleanPincode)
+          || (s.provider.address?.pincode && s.provider.address.pincode === cleanPincode))
+      );
+
+      if (computedDistance !== null && computedDistance <= thresholdKm) {
+        nearbyServices.push(mapService(s, { distance: computedDistance }));
+      } else if (matchesPincode && computedDistance === null) {
+        nearbyServices.push(mapService(s, { distance: 0 }));
       } else {
-        serviceObj.distance = null;
-        otherServices.push(serviceObj);
+        otherServices.push(mapService(s, { distance: null }));
       }
     });
 
-    // Sort nearby services by distance first
-    nearbyServices.sort((a, b) => a.distance - b.distance);
+    const explicitSort = typeof sort === 'string' && ['newest', 'price-low', 'price-high', 'rating', 'popular'].includes(sort)
+      ? sort
+      : null;
 
-    // Combine nearby services first, then other available services
-    const combinedServices = [...nearbyServices, ...otherServices];
+    const sortedNearby = explicitSort
+      ? sortServices(nearbyServices, explicitSort)
+      : [...nearbyServices].sort((a, b) => (
+        (Math.round(a.distance * 10) - Math.round(b.distance * 10))
+        || (new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      ));
+
+    const sortedOthers = explicitSort
+      ? sortServices(otherServices, explicitSort)
+      : sortServices(otherServices, 'newest');
+
+    const combinedServices = [...sortedNearby, ...sortedOthers];
 
     res.json({
       success: true,
       count: combinedServices.length,
-      nearbyCount: nearbyServices.length,
+      nearbyCount: sortedNearby.length,
       services: combinedServices,
-      providers: providers.map(p => ({
+      providers: providers.map((p) => ({
         id: p._id.toString(),
         name: p.name,
-        phone: p.phone,
+        phone: p.phone?.startsWith('email_') ? '' : (p.phone || ''),
         email: p.email,
         distance: p.distanceInKm,
         serviceRadius: p.serviceRadius || 10,

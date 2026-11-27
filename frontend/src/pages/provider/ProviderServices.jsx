@@ -3,16 +3,23 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FaPlus, FaEdit, FaTrash, FaToggleOn, FaToggleOff,
-  FaSearch, FaFilter, FaTimes, FaSave, FaStar, FaBriefcase
+  FaSearch, FaTimes, FaSave, FaStar, FaBriefcase, FaMapMarkerAlt
 } from 'react-icons/fa';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
+import {
+  ServiceFormFields,
+  buildInitialServiceForm,
+  validateServiceForm,
+} from '../../components/provider/ServiceFormFields';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const categoryIcons = {
-  Cleaning: '🧹', Plumbing: '🚿', Electrical: '⚡', Painting: '🎨',
-  Carpentry: '🪚', Appliances: '🔧', 'Pest Control': '🐛',
-  'Home Security': '🔐', Handyman: '🛠️', Other: '📦',
+  'Home Cleaning': '🧹', Plumber: '🚿', Electrician: '⚡', Painting: '🎨',
+  Carpenter: '🪚', 'Appliance Repair': '🔧', 'AC Repair': '❄️', 'Pest Control': '🐛',
+  'Salon at Home': '💇', Cleaning: '🧹', Plumbing: '🚿', Electrical: '⚡',
+  Carpentry: '🪚', Appliances: '🔧', Other: '📦',
 };
 
 const pricingLabel = (service) => {
@@ -22,22 +29,13 @@ const pricingLabel = (service) => {
   return `₹${service.price}`;
 };
 
-const EditModal = ({ service, categories, onClose, onSave }) => {
-  const [form, setForm] = useState({
-    name: service.name,
-    category: service.category,
-    description: service.description || '',
-    image: service.image || '',
-    pricingType: service.pricingType || 'fixed',
-    fixedPrice: service.fixedPrice || '',
-    inspectionFee: service.inspectionFee || '',
-    visitFee: service.visitFee || '',
-    hourlyRate: service.hourlyRate || '',
-  });
+const EditModal = ({ service, categories, user, onClose, onSave }) => {
+  const [form, setForm] = useState(() => buildInitialServiceForm(user, service));
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!form.name || !form.category) return toast.error('Name and category are required');
+    const errorMsg = validateServiceForm(form);
+    if (errorMsg) return toast.error(errorMsg);
     setSaving(true);
     try {
       const res = await fetch(`${API}/api/services/${service._id}`, {
@@ -62,73 +60,21 @@ const EditModal = ({ service, categories, onClose, onSave }) => {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
           <h2 className="text-lg font-bold text-gray-900">Edit Service</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition"><FaTimes /></button>
         </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Service Name *</label>
-            <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-              className="input-field" placeholder="e.g. AC Gas Refill" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Category *</label>
-              <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="input-field">
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Pricing Type</label>
-              <select value={form.pricingType} onChange={e => setForm({ ...form, pricingType: e.target.value })} className="input-field">
-                <option value="fixed">Fixed Price</option>
-                <option value="inspection">Inspection/Quote</option>
-                <option value="hourly">Hourly Rate</option>
-              </select>
-            </div>
-          </div>
-          {form.pricingType === 'fixed' && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Fixed Price (₹)</label>
-              <input type="number" value={form.fixedPrice} onChange={e => setForm({ ...form, fixedPrice: e.target.value })}
-                className="input-field" placeholder="e.g. 499" />
-            </div>
-          )}
-          {form.pricingType === 'inspection' && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Inspection Fee (₹)</label>
-              <input type="number" value={form.inspectionFee} onChange={e => setForm({ ...form, inspectionFee: e.target.value })}
-                className="input-field" placeholder="e.g. 99" />
-            </div>
-          )}
-          {form.pricingType === 'hourly' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Visit Fee (₹)</label>
-                <input type="number" value={form.visitFee} onChange={e => setForm({ ...form, visitFee: e.target.value })}
-                  className="input-field" placeholder="e.g. 199" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Hourly Rate (₹/hr)</label>
-                <input type="number" value={form.hourlyRate} onChange={e => setForm({ ...form, hourlyRate: e.target.value })}
-                  className="input-field" placeholder="e.g. 150" />
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Description</label>
-            <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-              rows={3} className="input-field resize-none" placeholder="What's included in this service..." />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Image URL</label>
-            <input type="url" value={form.image} onChange={e => setForm({ ...form, image: e.target.value })}
-              className="input-field" placeholder="https://..." />
-          </div>
+        <div className="p-6">
+          <ServiceFormFields
+            formData={form}
+            setFormData={setForm}
+            categories={categories}
+            user={user}
+            compact={true}
+          />
         </div>
-        <div className="p-6 border-t border-gray-100 flex gap-3 justify-end">
+        <div className="p-6 border-t border-gray-100 flex gap-3 justify-end sticky bottom-0 bg-white z-10">
           <button onClick={onClose} className="btn-ghost">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2">
             <FaSave /> {saving ? 'Saving...' : 'Save Changes'}
@@ -141,6 +87,7 @@ const EditModal = ({ service, categories, onClose, onSave }) => {
 
 const ProviderServices = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -232,6 +179,7 @@ const ProviderServices = () => {
           <EditModal
             service={editingService}
             categories={categories}
+            user={user}
             onClose={() => setEditingService(null)}
             onSave={handleEditSave}
           />
@@ -295,8 +243,17 @@ const ProviderServices = () => {
               className={`bg-white rounded-2xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow group ${!service.isActive ? 'opacity-70' : ''}`}>
               {/* Image */}
               <div className="relative h-40 overflow-hidden bg-gray-100">
-                <img src={service.image} alt={service.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                <img
+                  src={service.image || '/deep-home-cleaning.jpg'}
+                  alt={service.name}
+                  onError={(e) => {
+                    if (!e.currentTarget.dataset.fallbackApplied) {
+                      e.currentTarget.dataset.fallbackApplied = '1';
+                      e.currentTarget.src = '/deep-home-cleaning.jpg';
+                    }
+                  }}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
                 {/* Category Badge */}
                 <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm text-gray-700 text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm">
                   <span>{categoryIcons[service.category] || '📦'}</span> {service.category}
@@ -312,6 +269,20 @@ const ProviderServices = () => {
               {/* Content */}
               <div className="p-4">
                 <h3 className="font-bold text-gray-900 text-base leading-tight">{service.name}</h3>
+                {service.serviceKind && (
+                  <span className="inline-block mt-1 text-[10px] font-semibold bg-primary-50 text-primary-700 px-2 py-0.5 rounded-full">
+                    {service.serviceKind}
+                  </span>
+                )}
+                {(service.address?.city || service.address?.pincode) && (
+                  <p className="text-[11px] text-gray-500 mt-1.5 flex items-center gap-1">
+                    <FaMapMarkerAlt className="text-primary-500 shrink-0" />
+                    <span className="truncate">
+                      {[service.address?.locality, service.address?.city, service.address?.pincode].filter(Boolean).join(', ')}
+                      {service.serviceRadius ? ` · ${service.serviceRadius} km` : ''}
+                    </span>
+                  </p>
+                )}
                 {service.description && (
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{service.description}</p>
                 )}

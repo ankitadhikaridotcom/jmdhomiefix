@@ -26,6 +26,30 @@ const serviceSchema = new mongoose.Schema({
   // Auto-computed base price for sorting & backward compat
   basePrice: { type: Number, required: true },
 
+  // Service details & classification
+  serviceKind: { type: String, trim: true, default: '' },
+  estimatedDuration: { type: String, trim: true, default: '' },
+  highlights: [{ type: String, trim: true }],
+
+  // Service coverage & address (defaults to provider's base location when omitted)
+  address: {
+    formattedAddress: { type: String, trim: true, default: '' },
+    street: { type: String, trim: true, default: '' },
+    locality: { type: String, trim: true, default: '' },
+    city: { type: String, trim: true, default: '' },
+    state: { type: String, trim: true, default: '' },
+    country: { type: String, trim: true, default: 'India' },
+    pincode: { type: String, trim: true, default: '' },
+    latitude: { type: Number },
+    longitude: { type: Number },
+  },
+  location: {
+    type: { type: String, enum: ['Point'] },
+    coordinates: { type: [Number] }, // [longitude, latitude]
+  },
+  serviceRadius: { type: Number, min: 1, max: 500, default: 10 },
+  serviceAreas: [{ type: String, trim: true }],
+
   image: { type: String },
   isActive: { type: Boolean, default: true },
   rating: { type: Number, default: 0 },
@@ -42,6 +66,10 @@ serviceSchema.pre('validate', function (next) {
     if (this[field] != null && this[field] < 0) {
       return next(new Error(`${field} cannot be negative.`));
     }
+  }
+
+  if (this.serviceRadius != null && (!Number.isFinite(this.serviceRadius) || this.serviceRadius < 1 || this.serviceRadius > 500)) {
+    return next(new Error('Service radius must be between 1 and 500 km.'));
   }
 
   if (this.pricingType === 'fixed') {
@@ -73,5 +101,8 @@ serviceSchema.pre('validate', function (next) {
 serviceSchema.index({ category: 1, isActive: 1 });
 serviceSchema.index({ provider: 1, isActive: 1 });
 serviceSchema.index({ createdAt: -1 });
+serviceSchema.index({ location: '2dsphere' }, { sparse: true });
+serviceSchema.index({ 'address.pincode': 1, isActive: 1 });
+serviceSchema.index({ 'address.city': 1, isActive: 1 });
 
 module.exports = mongoose.model('Service', serviceSchema);

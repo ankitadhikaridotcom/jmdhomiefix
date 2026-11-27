@@ -10,7 +10,11 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
   const hasProviderAccess = user?.providerStatus === 'approved'
     || (user?.role === 'provider' && user?.verificationStatus === 'approved');
   const isAllowed = !allowedRoles || allowedRoles.some((role) => (
-    role === 'provider' ? hasProviderAccess : user?.role === role
+    role === 'provider'
+      ? hasProviderAccess
+      : role === 'customer'
+        ? (user?.role === 'customer' || hasProviderAccess)
+        : user?.role === role
   ));
   if (!isAllowed) {
     return <Navigate to="/" replace />;

@@ -7,12 +7,12 @@ import {
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 
-const API = 'http://localhost:5000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SKILL_SUGGESTIONS = ['Wiring', 'Panel Box', 'AC Installation', 'Plumbing', 'Tile Work', 'Painting', 'Carpentry', 'Appliance Repair', 'CCTV', 'Pest Control', 'Home Automation', 'Solar'];
 
 const ProviderProfile = () => {
-  const { user, updateUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [editing, setEditing] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingAvailability, setSavingAvailability] = useState(false);
@@ -53,7 +53,7 @@ const ProviderProfile = () => {
       const updateData = await updateRes.json();
 
       if (updateData.success) {
-        if (updateUser) updateUser(updateData.user);
+        if (refreshUser) await refreshUser().catch(() => {});
         toast.success('Profile picture updated!');
       } else {
         throw new Error(updateData.message || 'Failed to update profile');
@@ -151,7 +151,7 @@ const ProviderProfile = () => {
       });
       const data = await res.json();
       if (data.success) {
-        if (updateUser) updateUser(data.user);
+        if (refreshUser) await refreshUser().catch(() => {});
         toast.success('✅ Profile saved!');
         setEditing(false);
       } else toast.error(data.message || 'Failed to save');
@@ -171,7 +171,7 @@ const ProviderProfile = () => {
       const data = await res.json();
       if (data.success) {
         toast.success('✅ Availability saved!');
-        if (updateUser) updateUser({ ...user, availability: data.availability });
+        if (refreshUser) await refreshUser().catch(() => {});
       } else toast.error(data.message || 'Failed to save');
     } catch (e) { toast.error('Failed to save availability'); }
     finally { setSavingAvailability(false); }

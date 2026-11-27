@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Star, MapPin, ShieldCheck, ArrowRight, Sparkles } from 'lucide-react';
 
 const PriceBadge = ({ service }) => {
-  const pt = service.priceType;
+  const pt = service.priceType || service.pricingType;
   if (pt === 'fixed') {
     return (
       <div>
@@ -50,6 +50,13 @@ const PriceBadge = ({ service }) => {
 };
 
 const ServiceCard = ({ service, index = 0 }) => {
+  const locationParts = [
+    service.address?.locality,
+    service.address?.city || service.provider?.address?.city,
+    service.address?.pincode || service.provider?.address?.pincode,
+  ].filter(Boolean);
+  const locationLabel = [...new Set(locationParts)].slice(0, 2).join(', ');
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -61,8 +68,14 @@ const ServiceCard = ({ service, index = 0 }) => {
       {/* Image Container with 16:9 ratio feel */}
       <div className="relative aspect-[16/10] overflow-hidden bg-[#dedad0]">
         <img
-          src={service.image}
+          src={service.image || '/deep-home-cleaning.jpg'}
           alt={service.name}
+          onError={(e) => {
+            if (!e.currentTarget.dataset.fallbackApplied) {
+              e.currentTarget.dataset.fallbackApplied = '1';
+              e.currentTarget.src = '/deep-home-cleaning.jpg';
+            }
+          }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           loading="lazy"
         />
@@ -74,7 +87,7 @@ const ServiceCard = ({ service, index = 0 }) => {
         </span>
 
         {/* Pro distance */}
-        {service.distance !== undefined && (
+        {typeof service.distance === 'number' && (
           <span className="absolute bottom-3 left-3 bg-[#1a1a18]/80 backdrop-blur-xs text-[#f7f5f0] text-[10px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-xs">
             <MapPin className="w-3 h-3 text-[#b3261e]" />
             <span>{service.distance} km away</span>
@@ -97,14 +110,29 @@ const ServiceCard = ({ service, index = 0 }) => {
       {/* Content */}
       <div className="p-4 md:p-5 flex flex-col flex-1">
         <div className="flex-1">
-          <h3 className="font-bold text-[#1a1a18] group-hover:text-[#b3261e] transition-colors line-clamp-1 text-base">
-            {service.name}
-          </h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-bold text-[#1a1a18] group-hover:text-[#b3261e] transition-colors line-clamp-1 text-base">
+              {service.name}
+            </h3>
+          </div>
+
+          {service.serviceKind && (
+            <span className="inline-block mt-1 text-[10px] font-semibold uppercase tracking-wide text-[#b3261e] bg-[#f7f5f0] border border-[#dedad0] px-2 py-0.5 rounded-md">
+              {service.serviceKind}
+            </span>
+          )}
 
           {service.provider?.name && (
-            <div className="flex items-center gap-1.5 mt-1 text-xs font-semibold text-[#1a1a18]">
+            <div className="flex items-center gap-1.5 mt-1.5 text-xs font-semibold text-[#1a1a18]">
               <ShieldCheck className="w-3.5 h-3.5 text-[#b3261e]" />
               <span>Verified · {service.provider.name}</span>
+            </div>
+          )}
+
+          {locationLabel && (
+            <div className="flex items-center gap-1 mt-1 text-[11px] font-medium text-[#6a675f]">
+              <MapPin className="w-3 h-3 text-[#b3261e] shrink-0" />
+              <span className="truncate">{locationLabel}</span>
             </div>
           )}
 

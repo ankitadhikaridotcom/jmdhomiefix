@@ -146,7 +146,7 @@ const CustomerProfile = () => {
         )}
 
         {/* Saved Addresses Banner */}
-        {user?.role === 'customer' && (
+        {user?.role !== 'admin' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}
             className="mt-4 flex flex-col gap-4 rounded-2xl border border-teal-100 bg-teal-50/70 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3.5">

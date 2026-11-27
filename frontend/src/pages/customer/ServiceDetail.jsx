@@ -15,9 +15,12 @@ import {
   Sparkles,
   Lock,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  MapPin
 } from 'lucide-react';
 import { ServiceCardSkeleton } from '../../components/common/ui/Skeleton';
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const ServiceDetail = () => {
   const { id } = useParams();
@@ -27,7 +30,7 @@ const ServiceDetail = () => {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/services/${id}`)
+    fetch(`${API}/api/services/${id}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && data.service) setService(data.service);
@@ -77,7 +80,19 @@ const ServiceDetail = () => {
   }
 
   const providerInfo = service.provider || null;
-  const pt = service.priceType;
+  const pt = service.priceType || service.pricingType;
+  const serviceHighlights = Array.isArray(service.highlights) && service.highlights.length > 0
+    ? service.highlights
+    : [
+      '100% Background-Verified Professional',
+      'Upfront & Transparent Costing',
+      'Safe & Contactless Payment',
+      'Post-Service Warranty & Support',
+    ];
+  const serviceLocationText = service.address?.formattedAddress
+    || [service.address?.locality, service.address?.city, service.address?.state, service.address?.pincode]
+      .filter(Boolean)
+      .join(', ');
 
   const handleBooking = () => {
     if (providerInfo) {
@@ -117,15 +132,28 @@ const ServiceDetail = () => {
               className="relative rounded-3xl overflow-hidden bg-slate-900 border border-slate-200/80 shadow-md aspect-[16/9]"
             >
               <img
-                src={service.image}
+                src={service.image || '/deep-home-cleaning.jpg'}
                 alt={service.name}
+                onError={(e) => {
+                  if (!e.currentTarget.dataset.fallbackApplied) {
+                    e.currentTarget.dataset.fallbackApplied = '1';
+                    e.currentTarget.src = '/deep-home-cleaning.jpg';
+                  }
+                }}
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent" />
               <div className="absolute bottom-6 left-6 right-6">
-                <span className="inline-block bg-[#0EA5E9] text-white text-xs font-bold px-3 py-1 rounded-lg mb-2 shadow-xs uppercase tracking-wider">
-                  {service.category}
-                </span>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="inline-block bg-[#0EA5E9] text-white text-xs font-bold px-3 py-1 rounded-lg shadow-xs uppercase tracking-wider">
+                    {service.category}
+                  </span>
+                  {service.serviceKind && (
+                    <span className="inline-block bg-white/90 text-slate-900 text-xs font-bold px-3 py-1 rounded-lg shadow-xs">
+                      {service.serviceKind}
+                    </span>
+                  )}
+                </div>
                 <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight">
                   {service.name}
                 </h1>
@@ -145,6 +173,15 @@ const ServiceDetail = () => {
                 <Info className="w-4 h-4 text-slate-400" />
                 <span>{pricingLabel}</span>
               </div>
+              {service.estimatedDuration && (
+                <>
+                  <span className="text-slate-200">|</span>
+                  <div className="flex items-center gap-1.5 text-xs sm:text-sm text-slate-600">
+                    <Clock className="w-4 h-4 text-[#0EA5E9]" />
+                    <span>{service.estimatedDuration}</span>
+                  </div>
+                </>
+              )}
               {providerInfo && (
                 <>
                   <span className="text-slate-200">|</span>
@@ -169,14 +206,9 @@ const ServiceDetail = () => {
                   'Professional home service delivered by certified and background-verified technicians. Our team guarantees punctual arrival, genuine spare parts when applicable, and full service warranty.'}
               </p>
 
-              {/* Quality Checklist */}
+              {/* Quality / Highlights Checklist */}
               <div className="mt-6 pt-6 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  '100% Background-Verified Professional',
-                  'Upfront & Transparent Costing',
-                  'Safe & Contactless Payment',
-                  'Post-Service Warranty & Support',
-                ].map((item, idx) => (
+                {serviceHighlights.map((item, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-xs font-semibold text-slate-700">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>{item}</span>
@@ -184,6 +216,45 @@ const ServiceDetail = () => {
                 ))}
               </div>
             </motion.div>
+
+            {/* Service Location & Coverage Card */}
+            {(serviceLocationText || service.serviceAreas?.length > 0 || service.address?.pincode) && (
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.12 }}
+                className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs"
+              >
+                <h2 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-[#0EA5E9]" />
+                  <span>Service Area & Coverage</span>
+                </h2>
+                <div className="space-y-2 text-sm text-slate-600">
+                  {serviceLocationText && (
+                    <p>
+                      <span className="font-semibold text-slate-800">Base Address:</span> {serviceLocationText}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-3 text-xs pt-1">
+                    {service.address?.pincode && (
+                      <span className="bg-slate-100 text-slate-700 font-mono font-semibold px-2.5 py-1 rounded-lg">
+                        PIN: {service.address.pincode}
+                      </span>
+                    )}
+                    {service.serviceRadius && (
+                      <span className="bg-sky-50 text-[#0284C7] font-semibold px-2.5 py-1 rounded-lg">
+                        Covers up to {service.serviceRadius} km
+                      </span>
+                    )}
+                  </div>
+                  {service.serviceAreas?.length > 0 && (
+                    <p className="text-xs text-slate-500 pt-1">
+                      <span className="font-semibold text-slate-700">Localities:</span> {service.serviceAreas.join(', ')}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
             {/* Provider Credentials Card */}
             {providerInfo && (

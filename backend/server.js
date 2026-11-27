@@ -23,6 +23,15 @@ const Quote = require('./models/Quote');
 const Notification = require('./models/Notification');
 const Review = require('./models/Review');
 const { requireAuth, requireRole } = require('./middleware/auth');
+const {
+  CATEGORY_ALIASES,
+  escapeRegex,
+  isValidCoordinate,
+  isApprovedProvider,
+  mapService,
+  buildServiceSearchClauses,
+  sortServices,
+} = require('./utils/serviceHelpers');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -38,25 +47,15 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 const isObjectId = (value) => typeof value === 'string' && /^[0-9a-f]{24}$/i.test(value);
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isValidDate = (value) => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 };
 const isValidTime = (value) => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
-const isValidCoordinate = (latitude, longitude) => (
-  latitude !== undefined && latitude !== null && latitude !== ''
-  && longitude !== undefined && longitude !== null && longitude !== ''
-  && Number.isFinite(Number(latitude))
-  && Number.isFinite(Number(longitude))
-  && Number(latitude) >= -90
-  && Number(latitude) <= 90
-  && Number(longitude) >= -180
-  && Number(longitude) <= 180
-);
 const toPublicUser = (user) => {
   const publicUser = user.toObject();
+  publicUser.id = publicUser._id.toString();
   delete publicUser.password;
   if (publicUser.phone?.startsWith('email_')) publicUser.phone = '';
   if (publicUser.role === 'provider' && publicUser.providerStatus === 'not_applied') {
@@ -65,13 +64,6 @@ const toPublicUser = (user) => {
   return publicUser;
 };
 const publicPhone = (phone) => (phone?.startsWith('email_') ? '' : phone || '');
-const isApprovedProvider = (provider) => Boolean(provider && (
-  provider.role !== 'admin'
-  && (provider.providerStatus === 'approved'
-    || (provider.role === 'provider'
-      && provider.providerStatus === 'not_applied'
-      && provider.verificationStatus === 'approved'))
-));
 
 const allowedOrigins = new Set(
   CLIENT_URL.split(',').map((origin) => origin.trim()).filter(Boolean)
@@ -254,10 +246,7 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Registration successful.',
-      user: {
-        id: user._id, name: user.name, email: user.email, role: user.role,
-        providerStatus: user.providerStatus, verificationStatus: user.verificationStatus,
-      },
+      user: toPublicUser(user),
     });
   } catch (err) {
     console.error('[Register Error]', err.message);
@@ -298,18 +287,7 @@ app.post('/api/auth/login', async (req, res) => {
     // Role is always from DB — frontend must redirect based on this, not its own state
     res.json({
       success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: publicPhone(user.phone),
-        role: user.role,
-        providerStatus: user.role === 'provider' && user.providerStatus === 'not_applied'
-          ? user.verificationStatus
-          : user.providerStatus,
-        phoneVerified: user.phoneVerified,
-        verificationStatus: user.verificationStatus,
-      },
+      user: toPublicUser(user),
     });
   } catch (err) {
     console.error('[Login Error]', err.message);
@@ -536,33 +514,6 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out' });
 });
 
-// ---------- Helper: map service to frontend format ----------
-function mapService(s) {
-  const isRecent = s.createdAt && (Date.now() - new Date(s.createdAt).getTime()) < 14 * 24 * 60 * 60 * 1000;
-  return {
-    id: s._id.toString(),
-    _id: s._id.toString(),
-    name: s.name,
-    category: s.category,
-    description: s.description || '',
-    price: s.basePrice,
-    priceType: s.pricingType,
-    pricingType: s.pricingType,
-    fixedPrice: s.fixedPrice || null,
-    inspectionFee: s.inspectionFee || null,
-    visitFee: s.visitFee || null,
-    hourlyRate: s.hourlyRate || null,
-    billingIncrement: s.billingIncrement || 60,
-    isActive: s.isActive !== undefined ? s.isActive : true,
-    image: s.image || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=400&h=300&fit=crop',
-    provider: s.provider ? { id: (s.provider._id || s.provider).toString(), name: s.provider.name || '' } : null,
-    rating: s.rating || 0,
-    reviewCount: s.reviewCount || 0,
-    createdAt: s.createdAt || null,
-    isNew: Boolean(isRecent),
-  };
-}
-
 // ---------- Services Routes ----------
 
 const slugifyCategory = (name) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -677,37 +628,164 @@ app.put('/api/admin/service-categories/:id', requireAuth, requireRole('admin'), 
   }
 });
 
-// Service Category Aliases for search and filter tolerance
-const CATEGORY_ALIASES = {
-  plumbing: 'Plumber',
-  plumber: 'Plumber',
-  electrical: 'Electrician',
-  electrician: 'Electrician',
-  electric: 'Electrician',
-  cleaning: 'Home Cleaning',
-  clean: 'Home Cleaning',
-  'home cleaning': 'Home Cleaning',
-  house: 'Home Cleaning',
-  carpentry: 'Carpenter',
-  carpenter: 'Carpenter',
-  appliances: 'Appliance Repair',
-  appliance: 'Appliance Repair',
-  'appliance repair': 'Appliance Repair',
-  painting: 'Painting',
-  paint: 'Painting',
-  painter: 'Painting',
-  'pest control': 'Pest Control',
-  pest: 'Pest Control',
-  'salon at home': 'Salon at Home',
-  salon: 'Salon at Home',
-  'ac repair': 'AC Repair',
-  ac: 'AC Repair',
+const PROVIDER_PUBLIC_FIELDS = 'name phone profileImage profession experience location address serviceRadius serviceAreas role providerStatus verificationStatus accountStatus';
+
+const normalizeStringList = (value, maxItems = 15) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean).slice(0, maxItems);
+  }
+  if (typeof value === 'string') {
+    return value.split(/[\n,]+/).map((item) => item.trim()).filter(Boolean).slice(0, maxItems);
+  }
+  return [];
+};
+
+const resolveActiveCategoryName = async (rawCategory) => {
+  if (typeof rawCategory !== 'string' || !rawCategory.trim()) return null;
+  await ensureServiceCategories();
+  const clean = rawCategory.trim();
+  const mapped = CATEGORY_ALIASES[clean.toLowerCase()] || clean;
+  const active = await ServiceCategory.findOne({
+    isActive: true,
+    name: { $in: [new RegExp(`^${escapeRegex(clean)}$`, 'i'), new RegExp(`^${escapeRegex(mapped)}$`, 'i')] },
+  }).select('name').lean();
+  return active ? active.name : null;
+};
+
+const extractServiceAddressAndMeta = (body, providerUser, existingService = null) => {
+  const inputAddr = body.address && typeof body.address === 'object' && !Array.isArray(body.address)
+    ? body.address
+    : {};
+  const fallbackAddr = existingService?.address?.toObject
+    ? existingService.address.toObject()
+    : (existingService?.address || providerUser?.address?.toObject?.() || providerUser?.address || {});
+
+  const streetInput = typeof body.address === 'string'
+    ? body.address
+    : (body.street !== undefined ? body.street : inputAddr.street);
+  const localityInput = body.locality !== undefined ? body.locality : inputAddr.locality;
+  const cityInput = body.city !== undefined ? body.city : inputAddr.city;
+  const stateInput = body.state !== undefined ? body.state : inputAddr.state;
+  const countryInput = body.country !== undefined ? body.country : inputAddr.country;
+  const pincodeInput = body.pincode !== undefined ? body.pincode : inputAddr.pincode;
+  const formattedInput = body.formattedAddress !== undefined ? body.formattedAddress : inputAddr.formattedAddress;
+
+  const street = streetInput !== undefined ? String(streetInput || '').trim() : (fallbackAddr.street || '');
+  const locality = localityInput !== undefined ? String(localityInput || '').trim() : (fallbackAddr.locality || '');
+  const city = cityInput !== undefined ? String(cityInput || '').trim() : (fallbackAddr.city || providerUser?.city || '');
+  const state = stateInput !== undefined ? String(stateInput || '').trim() : (fallbackAddr.state || '');
+  const country = countryInput !== undefined ? String(countryInput || '').trim() : (fallbackAddr.country || 'India');
+  const pincode = pincodeInput !== undefined ? String(pincodeInput || '').trim() : (fallbackAddr.pincode || '');
+
+  if (pincode && !/^\d{6}$/.test(pincode)) {
+    return { error: 'Enter a valid 6-digit PIN code.' };
+  }
+
+  const rawLat = body.latitude !== undefined ? body.latitude : inputAddr.latitude;
+  const rawLng = body.longitude !== undefined ? body.longitude : inputAddr.longitude;
+  const hasExplicitLat = rawLat !== undefined && rawLat !== null && rawLat !== '';
+  const hasExplicitLng = rawLng !== undefined && rawLng !== null && rawLng !== '';
+  if (hasExplicitLat !== hasExplicitLng) {
+    return { error: 'Latitude and longitude must be provided together.' };
+  }
+  if (hasExplicitLat && !isValidCoordinate(rawLat, rawLng)) {
+    return { error: 'Valid latitude and longitude coordinates are required.' };
+  }
+
+  const fallbackCoords = existingService?.location?.coordinates?.length === 2
+    ? existingService.location.coordinates
+    : (providerUser?.location?.coordinates?.length === 2 ? providerUser.location.coordinates : null);
+
+  const latitude = hasExplicitLat
+    ? Number(rawLat)
+    : (fallbackAddr.latitude !== undefined ? Number(fallbackAddr.latitude) : (fallbackCoords ? Number(fallbackCoords[1]) : undefined));
+  const longitude = hasExplicitLng
+    ? Number(rawLng)
+    : (fallbackAddr.longitude !== undefined ? Number(fallbackAddr.longitude) : (fallbackCoords ? Number(fallbackCoords[0]) : undefined));
+
+  const formattedAddress = formattedInput !== undefined && String(formattedInput || '').trim()
+    ? String(formattedInput).trim()
+    : (street || locality || city || state || pincode)
+      ? [street, locality, city, state, pincode].filter(Boolean).join(', ')
+      : (fallbackAddr.formattedAddress || '');
+
+  const rawRadius = body.serviceRadius;
+  let serviceRadius = existingService?.serviceRadius || providerUser?.serviceRadius || 10;
+  if (rawRadius !== undefined && rawRadius !== null && rawRadius !== '') {
+    const parsedRadius = Number(rawRadius);
+    if (!Number.isFinite(parsedRadius) || parsedRadius < 1 || parsedRadius > 500) {
+      return { error: 'Service radius must be between 1 and 500 km.' };
+    }
+    serviceRadius = parsedRadius;
+  }
+
+  const serviceAreas = body.serviceAreas !== undefined
+    ? normalizeStringList(body.serviceAreas, 25)
+    : (existingService?.serviceAreas?.length ? existingService.serviceAreas : (providerUser?.serviceAreas || []));
+
+  const address = {
+    formattedAddress,
+    street,
+    locality,
+    city,
+    state,
+    country,
+    pincode,
+    ...(isValidCoordinate(latitude, longitude) ? { latitude, longitude } : {}),
+  };
+
+  const location = isValidCoordinate(latitude, longitude) && (latitude !== 0 || longitude !== 0)
+    ? { type: 'Point', coordinates: [longitude, latitude] }
+    : undefined;
+
+  return {
+    address,
+    location,
+    serviceRadius,
+    serviceAreas,
+  };
+};
+
+const syncMissingProviderLocationFromService = async (providerUser, meta) => {
+  if (!providerUser) return;
+  let dirty = false;
+  const hasProviderCoords = Array.isArray(providerUser.location?.coordinates)
+    && providerUser.location.coordinates.length === 2
+    && (Number(providerUser.location.coordinates[0]) !== 0 || Number(providerUser.location.coordinates[1]) !== 0);
+
+  if (!hasProviderCoords && meta.location) {
+    providerUser.location = meta.location;
+    dirty = true;
+  }
+  const currentAddr = providerUser.address?.toObject ? providerUser.address.toObject() : (providerUser.address || {});
+  const mergedAddr = { ...currentAddr };
+  if (!mergedAddr.formattedAddress && meta.address.formattedAddress) { mergedAddr.formattedAddress = meta.address.formattedAddress; dirty = true; }
+  if (!mergedAddr.street && meta.address.street) { mergedAddr.street = meta.address.street; dirty = true; }
+  if (!mergedAddr.locality && meta.address.locality) { mergedAddr.locality = meta.address.locality; dirty = true; }
+  if (!mergedAddr.city && meta.address.city) { mergedAddr.city = meta.address.city; providerUser.city = meta.address.city; dirty = true; }
+  if (!mergedAddr.state && meta.address.state) { mergedAddr.state = meta.address.state; dirty = true; }
+  if (!mergedAddr.pincode && meta.address.pincode) { mergedAddr.pincode = meta.address.pincode; dirty = true; }
+  if (mergedAddr.latitude === undefined && meta.address.latitude !== undefined) { mergedAddr.latitude = meta.address.latitude; dirty = true; }
+  if (mergedAddr.longitude === undefined && meta.address.longitude !== undefined) { mergedAddr.longitude = meta.address.longitude; dirty = true; }
+
+  if (!providerUser.serviceRadius && meta.serviceRadius) {
+    providerUser.serviceRadius = meta.serviceRadius;
+    dirty = true;
+  }
+  if ((!providerUser.serviceAreas || providerUser.serviceAreas.length === 0) && meta.serviceAreas.length > 0) {
+    providerUser.serviceAreas = meta.serviceAreas;
+    dirty = true;
+  }
+  if (dirty) {
+    providerUser.address = mergedAddr;
+    await providerUser.save();
+  }
 };
 
 // Services endpoint (public)
 app.get('/api/services', async (req, res) => {
   try {
-    const { category, search, sort } = req.query;
+    const { category, search, sort, pincode, city } = req.query;
     if ((category !== undefined && typeof category !== 'string')
       || (search !== undefined && typeof search !== 'string')) {
       return res.status(400).json({ success: false, message: 'Category and search must be text.' });
@@ -718,43 +796,7 @@ app.get('/api/services', async (req, res) => {
     const query = { isActive: true };
 
     if (search && search.trim()) {
-      const cleanSearch = search.trim();
-      const terms = cleanSearch.toLowerCase().split(/\s+/).filter(Boolean);
-      const orClauses = [];
-
-      // Exact phrase match across fields
-      const phraseRegex = new RegExp(escapeRegex(cleanSearch), 'i');
-      orClauses.push({ name: phraseRegex }, { category: phraseRegex }, { description: phraseRegex });
-
-      // Individual terms
-      terms.forEach((term) => {
-        const termRegex = new RegExp(escapeRegex(term), 'i');
-        orClauses.push({ name: termRegex }, { category: termRegex }, { description: termRegex });
-
-        if (CATEGORY_ALIASES[term]) {
-          const catName = CATEGORY_ALIASES[term];
-          orClauses.push({ category: new RegExp(`^${escapeRegex(catName)}$`, 'i') });
-        }
-      });
-
-      // Domain-specific synonym keywords
-      if (/fan|switch|breaker|mcb|wire|wiring|inverter|short/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Electrician$', 'i') });
-      }
-      if (/pipe|tap|drain|leak|water|flush|basin/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Plumber$', 'i') });
-      }
-      if (/wood|furniture|door|lock|table|chair|bed/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Carpenter$', 'i') });
-      }
-      if (/wash|mop|dust|vacuum|maid|sofa|carpet/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^Home Cleaning$', 'i') });
-      }
-      if (/cooling|filter|gas|compressor/i.test(cleanSearch)) {
-        orClauses.push({ category: new RegExp('^(AC Repair|Appliance Repair)$', 'i') });
-      }
-
-      query.$or = orClauses;
+      query.$or = buildServiceSearchClauses(search);
     }
 
     await ensureServiceCategories();
@@ -770,16 +812,23 @@ app.get('/api/services', async (req, res) => {
     } else {
       query.category = { $in: activeCategoryNames };
     }
-    const services = await Service.find(query).sort({ createdAt: -1 }).populate('provider', 'name role providerStatus verificationStatus');
-    const approvedServices = services.filter((service) => (
-      isApprovedProvider(service.provider)
-    ));
-    const result = approvedServices.map(mapService);
-    if (sort === 'newest') result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-    if (sort === 'price-low') result.sort((a, b) => a.price - b.price);
-    if (sort === 'price-high') result.sort((a, b) => b.price - a.price);
-    if (sort === 'rating') result.sort((a, b) => b.rating - a.rating);
-    if (sort === 'popular') result.sort((a, b) => ((b.rating * b.reviewCount) - (a.rating * a.reviewCount)));
+    const services = await Service.find(query).sort({ createdAt: -1 }).populate('provider', PROVIDER_PUBLIC_FIELDS);
+    const cleanPincode = typeof pincode === 'string' ? pincode.trim() : '';
+    const cleanCity = typeof city === 'string' ? city.trim().toLowerCase() : '';
+
+    const approvedServices = services.filter((service) => {
+      if (!isApprovedProvider(service.provider)) return false;
+      if (cleanPincode) {
+        const svcPin = service.address?.pincode || service.provider?.address?.pincode || '';
+        if (svcPin !== cleanPincode) return false;
+      }
+      if (cleanCity) {
+        const svcCity = (service.address?.city || service.provider?.address?.city || service.provider?.city || '').toLowerCase();
+        if (!svcCity.includes(cleanCity)) return false;
+      }
+      return true;
+    });
+    const result = sortServices(approvedServices.map((s) => mapService(s)), sort);
     res.json({ success: true, services: result });
   } catch (err) {
     console.error('Fetch services error:', err);
@@ -790,8 +839,10 @@ app.get('/api/services', async (req, res) => {
 // Get Provider's Services endpoint (provider only) — must be above /:id so Express doesn't treat "me" as an ID
 app.get('/api/services/me', requireAuth, requireRole('provider'), async (req, res) => {
   try {
-    const services = await Service.find({ provider: req.user.id });
-    let result = services.map(mapService);
+    const services = await Service.find({ provider: req.user.id })
+      .sort({ createdAt: -1 })
+      .populate('provider', PROVIDER_PUBLIC_FIELDS);
+    const result = services.map((s) => mapService(s));
     res.json({ success: true, services: result });
   } catch (err) {
     console.error('Fetch provider services error:', err);
@@ -806,7 +857,7 @@ app.get('/api/services/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid service ID.' });
     }
     const service = await Service.findOne({ _id: req.params.id, isActive: true })
-      .populate('provider', 'name role providerStatus verificationStatus');
+      .populate('provider', PROVIDER_PUBLIC_FIELDS);
     if (!service) return res.status(404).json({ success: false, message: 'Service not found.' });
     await ensureServiceCategories();
     if (!await ServiceCategory.exists({ name: service.category, isActive: true })) {
@@ -825,19 +876,48 @@ app.get('/api/services/:id', async (req, res) => {
 // Add Service endpoint (provider only)
 app.post('/api/services', requireAuth, requireRole('provider'), async (req, res) => {
   try {
-    const { name, category, description, pricingType, fixedPrice, inspectionFee, visitFee, hourlyRate, billingIncrement, image } = req.body;
-    if (!name || !category || !pricingType) {
+    const {
+      name, category, description, pricingType, fixedPrice, inspectionFee,
+      visitFee, hourlyRate, billingIncrement, image, serviceKind, estimatedDuration, highlights,
+    } = req.body;
+    if (!name || !String(name).trim() || !category || !pricingType) {
       return res.status(400).json({ success: false, message: 'Name, category, and pricing type are required.' });
     }
-    await ensureServiceCategories();
-    if (!await ServiceCategory.exists({ name: category, isActive: true })) {
+    const activeCategory = await resolveActiveCategoryName(category);
+    if (!activeCategory) {
       return res.status(400).json({ success: false, message: 'Select an active service category.' });
     }
     if (!['fixed', 'inspection', 'hourly'].includes(pricingType)) {
       return res.status(400).json({ success: false, message: 'Invalid pricing type.' });
     }
+
+    const providerUser = await User.findById(req.user.id);
+    if (!providerUser) {
+      return res.status(404).json({ success: false, message: 'Provider account not found.' });
+    }
+
+    const meta = extractServiceAddressAndMeta(req.body, providerUser);
+    if (meta.error) {
+      return res.status(400).json({ success: false, message: meta.error });
+    }
+
     // Build service data — basePrice is auto-computed by the model pre-validate hook
-    const serviceData = { name, category, description, pricingType, image, provider: req.user.id, basePrice: 0 };
+    const serviceData = {
+      name: String(name).trim(),
+      category: activeCategory,
+      serviceKind: typeof serviceKind === 'string' ? serviceKind.trim().slice(0, 80) : '',
+      estimatedDuration: typeof estimatedDuration === 'string' ? estimatedDuration.trim().slice(0, 60) : '',
+      highlights: normalizeStringList(highlights, 15),
+      description: typeof description === 'string' ? description.trim() : '',
+      pricingType,
+      image: typeof image === 'string' ? image.trim() : '',
+      address: meta.address,
+      ...(meta.location ? { location: meta.location } : {}),
+      serviceRadius: meta.serviceRadius,
+      serviceAreas: meta.serviceAreas,
+      provider: req.user.id,
+      basePrice: 0,
+    };
     const resolvedPrice = Number(fixedPrice !== undefined ? fixedPrice : (req.body.price !== undefined ? req.body.price : 0));
     if (pricingType === 'fixed') serviceData.fixedPrice = resolvedPrice;
     if (pricingType === 'inspection') serviceData.inspectionFee = Number(inspectionFee !== undefined ? inspectionFee : resolvedPrice);
@@ -846,8 +926,11 @@ app.post('/api/services', requireAuth, requireRole('provider'), async (req, res)
       serviceData.hourlyRate = Number(hourlyRate);
       serviceData.billingIncrement = Number(billingIncrement) || 60;
     }
+
     const newService = await Service.create(serviceData);
-    res.status(201).json({ success: true, service: newService });
+    await syncMissingProviderLocationFromService(providerUser, meta);
+    const populatedService = await Service.findById(newService._id).populate('provider', PROVIDER_PUBLIC_FIELDS);
+    res.status(201).json({ success: true, service: mapService(populatedService || newService) });
   } catch (err) {
     console.error('Create service error:', err);
     const msg = err.message || 'Failed to create service.';
@@ -875,32 +958,67 @@ app.put('/api/services/:id', requireAuth, requireRole('provider'), async (req, r
   try {
     const service = await Service.findOne({ _id: req.params.id, provider: req.user.id });
     if (!service) return res.status(404).json({ success: false, message: 'Service not found or access denied.' });
-    const { name, category, description, image, pricingType, fixedPrice, inspectionFee, visitFee, hourlyRate, billingIncrement } = req.body;
-    if (name) service.name = name;
-    if (category) {
-      await ensureServiceCategories();
-      if (!await ServiceCategory.exists({ name: category, isActive: true })) {
+    const {
+      name, category, description, image, pricingType, fixedPrice, inspectionFee,
+      visitFee, hourlyRate, billingIncrement, serviceKind, estimatedDuration, highlights, isActive,
+    } = req.body;
+
+    if (name !== undefined) {
+      if (!String(name).trim()) return res.status(400).json({ success: false, message: 'Service name is required.' });
+      service.name = String(name).trim();
+    }
+    if (category !== undefined) {
+      const activeCategory = await resolveActiveCategoryName(category);
+      if (!activeCategory) {
         return res.status(400).json({ success: false, message: 'Select an active service category.' });
       }
-      service.category = category;
+      service.category = activeCategory;
     }
-    if (description !== undefined) service.description = description;
-    if (image !== undefined) service.image = image;
+    if (description !== undefined) service.description = String(description || '').trim();
+    if (image !== undefined) service.image = String(image || '').trim();
+    if (serviceKind !== undefined) service.serviceKind = String(serviceKind || '').trim().slice(0, 80);
+    if (estimatedDuration !== undefined) service.estimatedDuration = String(estimatedDuration || '').trim().slice(0, 60);
+    if (highlights !== undefined) service.highlights = normalizeStringList(highlights, 15);
+    if (typeof isActive === 'boolean') service.isActive = isActive;
+
     if (pricingType !== undefined && !['fixed', 'inspection', 'hourly'].includes(pricingType)) {
       return res.status(400).json({ success: false, message: 'Invalid pricing type.' });
     }
     if (pricingType) {
       service.pricingType = pricingType;
-      if (pricingType === 'fixed' && fixedPrice !== undefined) service.fixedPrice = Number(fixedPrice);
-      if (pricingType === 'inspection' && inspectionFee !== undefined) service.inspectionFee = Number(inspectionFee);
-      if (pricingType === 'hourly') {
+      if (pricingType === 'fixed') {
+        if (fixedPrice !== undefined) service.fixedPrice = Number(fixedPrice);
+        service.inspectionFee = undefined;
+        service.visitFee = undefined;
+        service.hourlyRate = undefined;
+      } else if (pricingType === 'inspection') {
+        if (inspectionFee !== undefined) service.inspectionFee = Number(inspectionFee);
+        service.fixedPrice = undefined;
+        service.visitFee = undefined;
+        service.hourlyRate = undefined;
+      } else if (pricingType === 'hourly') {
         if (visitFee !== undefined) service.visitFee = Number(visitFee);
         if (hourlyRate !== undefined) service.hourlyRate = Number(hourlyRate);
-        if (billingIncrement !== undefined) service.billingIncrement = Number(billingIncrement);
+        if (billingIncrement !== undefined) service.billingIncrement = Number(billingIncrement) || 60;
+        service.fixedPrice = undefined;
+        service.inspectionFee = undefined;
       }
     }
+
+    const providerUser = await User.findById(req.user.id);
+    const meta = extractServiceAddressAndMeta(req.body, providerUser, service);
+    if (meta.error) {
+      return res.status(400).json({ success: false, message: meta.error });
+    }
+    service.address = meta.address;
+    service.location = meta.location;
+    service.serviceRadius = meta.serviceRadius;
+    service.serviceAreas = meta.serviceAreas;
+
     await service.save();
-    res.json({ success: true, service: mapService(service) });
+    await syncMissingProviderLocationFromService(providerUser, meta);
+    const populatedService = await Service.findById(service._id).populate('provider', PROVIDER_PUBLIC_FIELDS);
+    res.json({ success: true, service: mapService(populatedService || service) });
   } catch (err) {
     console.error('Edit service error:', err);
     res.status(400).json({ success: false, message: err.message || 'Failed to update service.' });
@@ -1052,7 +1170,7 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
   try {
     let query = {};
     if (req.query.mode === 'provider') {
-      if (req.user.providerStatus !== 'approved') {
+      if (!req.user.isApprovedProvider) {
         return res.status(403).json({ success: false, message: 'Provider approval is required.' });
       }
       query.provider = req.user.id;
@@ -1302,7 +1420,7 @@ const handleBookingStatusUpdate = async (req, res) => {
     const providerMode = mode === 'provider'
       || (mode !== 'customer' && req.user.role === 'provider' && !ownsCustomerBooking);
     if (req.user.role !== 'admin' && providerMode
-      && (!ownsProviderBooking || req.user.providerStatus !== 'approved')) {
+      && (!ownsProviderBooking || !req.user.isApprovedProvider)) {
       return res.status(403).json({ success: false, message: 'Approved provider access to this booking is required.' });
     }
     if (req.user.role !== 'admin' && !providerMode && !ownsCustomerBooking) {
@@ -1451,6 +1569,7 @@ app.get('/api/providers/:id/availability', async (req, res) => {
   try {
     const { date } = req.query; // e.g. YYYY-MM-DD
     if (!date) return res.status(400).json({ success: false, message: 'Date is required.' });
+    if (!isValidDate(date)) return res.status(400).json({ success: false, message: 'Valid date (YYYY-MM-DD) is required.' });
 
     const provider = await User.findById(req.params.id);
     if (!isApprovedProvider(provider)) {
@@ -1465,10 +1584,10 @@ app.get('/api/providers/:id/availability', async (req, res) => {
       return res.json({ success: true, availableSlots: [] });
     }
 
-    // Convert date string to day of week (e.g., 'Mon')
-    const dateObj = new Date(date);
+    // Convert date string to day of week (e.g., 'Mon') in UTC so timezone offsets don't shift the day
+    const dateObj = new Date(`${date}T00:00:00.000Z`);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dayOfWeek = days[dateObj.getDay()];
+    const dayOfWeek = days[dateObj.getUTCDay()];
 
     if (avail.workingDays && avail.workingDays.length > 0 && !avail.workingDays.includes(dayOfWeek)) {
       return res.json({ success: true, availableSlots: [] });
@@ -2098,13 +2217,20 @@ app.put('/api/profile', requireAuth, async (req, res) => {
       user.address.city = user.city;
     }
     if (address !== undefined) {
-      user.address = user.address || {};
+      const existingAddr = user.address?.toObject ? user.address.toObject() : (user.address || {});
       if (typeof address === 'string') {
-        user.address.street = address.trim();
+        user.address = { ...existingAddr, street: address.trim() };
       } else if (address && typeof address === 'object' && !Array.isArray(address)) {
-        for (const field of ['street', 'locality', 'city', 'state', 'country', 'pincode', 'landmark']) {
-          if (typeof address[field] === 'string') user.address[field] = address[field].trim();
+        const nextAddr = { ...existingAddr };
+        for (const field of ['street', 'locality', 'city', 'state', 'country', 'pincode', 'landmark', 'formattedAddress']) {
+          if (typeof address[field] === 'string') nextAddr[field] = address[field].trim();
         }
+        if (isValidCoordinate(address.latitude, address.longitude)) {
+          nextAddr.latitude = Number(address.latitude);
+          nextAddr.longitude = Number(address.longitude);
+          user.location = { type: 'Point', coordinates: [Number(address.longitude), Number(address.latitude)] };
+        }
+        user.address = nextAddr;
       } else {
         return res.status(400).json({ success: false, message: 'Address must be text or an address object.' });
       }
@@ -2223,20 +2349,27 @@ app.put('/api/admin/provider-applications/:id/review', requireAuth, requireRole(
 app.get('/api/admin/providers', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const providers = await User.find({
-      $or: [{ role: 'provider' }, { providerStatus: 'approved' }]
+      $or: [{ role: 'provider' }, { providerStatus: { $in: ['pending', 'approved', 'rejected'] } }]
     }).select('-password').sort({ createdAt: -1 });
     const formatted = providers.map(p => ({
       id: p._id.toString(),
       name: p.name,
       email: p.email,
-      phone: p.phone,
+      phone: publicPhone(p.phone),
       profession: p.profession || '',
       experience: p.experience || 0,
       city: p.address?.city || p.city || '',
-      status: p.providerStatus !== 'not_applied' ? p.providerStatus : p.verificationStatus || 'pending',
+      pincode: p.address?.pincode || '',
+      location: p.address?.city || p.city || '',
+      address: p.address || null,
+      serviceRadius: p.serviceRadius || 10,
+      status: p.verificationStatus === 'suspended' || p.accountStatus === 'suspended'
+        ? 'suspended'
+        : (p.providerStatus !== 'not_applied' ? p.providerStatus : p.verificationStatus || 'pending'),
       avatar: p.profileImage || '',
       joinDate: p.createdAt,
       about: p.about || '',
+      bio: p.about || '',
       skills: p.skills || [],
       services: p.skills || [],
     }));
@@ -2256,12 +2389,39 @@ app.put('/api/admin/providers/:id/status', requireAuth, requireRole('admin'), as
       return res.status(400).json({ success: false, message: 'Invalid status.' });
     }
     const provider = await User.findById(req.params.id);
-    if (!provider || provider.role !== 'provider') {
+    if (!provider || provider.role === 'admin' || (provider.role !== 'provider' && provider.providerStatus === 'not_applied')) {
       return res.status(404).json({ success: false, message: 'Provider not found.' });
     }
     provider.verificationStatus = status;
+    if (status === 'approved') {
+      provider.role = 'provider';
+      provider.providerStatus = 'approved';
+      provider.accountStatus = 'active';
+      provider.providerRejectionReason = undefined;
+    } else if (status === 'suspended') {
+      provider.accountStatus = 'suspended';
+    } else {
+      provider.providerStatus = status;
+      provider.accountStatus = 'active';
+    }
     await provider.save();
-    res.json({ success: true, message: `Provider ${status} successfully.`, provider: { id: provider._id, verificationStatus: provider.verificationStatus } });
+
+    if (['approved', 'rejected', 'pending'].includes(status)) {
+      await ProviderApplication.updateOne(
+        { user: provider._id },
+        { $set: { status, reviewedBy: req.user.id, reviewedAt: new Date() } }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Provider ${status} successfully.`,
+      provider: {
+        id: provider._id,
+        verificationStatus: provider.verificationStatus,
+        providerStatus: provider.providerStatus,
+      },
+    });
   } catch (err) {
     console.error('[Admin Provider Status Error]', err.message);
     res.status(500).json({ success: false, message: 'Failed to update provider status.' });
