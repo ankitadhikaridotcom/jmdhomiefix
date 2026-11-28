@@ -613,25 +613,13 @@ const Navbar = () => {
                                   <span>My Profile</span>
                                 </Link>
 
-                                {providerApproved ? (
+                                {providerApproved && (
                                   <Link
                                     to="/provider"
                                     className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#0284C7] bg-sky-50/60 hover:bg-sky-50 font-semibold transition-colors"
                                   >
                                     <LayoutDashboard className="w-4 h-4 text-[#0EA5E9]" />
                                     <span>Provider Dashboard</span>
-                                  </Link>
-                                ) : (
-                                  <Link
-                                    to="/provider-application"
-                                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-emerald-700 bg-emerald-50/60 hover:bg-emerald-50 font-semibold transition-colors"
-                                  >
-                                    <Sparkles className="w-4 h-4 text-emerald-500" />
-                                    <span>
-                                      {user?.providerStatus === 'pending'
-                                        ? 'Application Pending'
-                                        : 'Become a Partner'}
-                                    </span>
                                   </Link>
                                 )}
                               </>
@@ -652,13 +640,6 @@ const Navbar = () => {
                                 >
                                   <MapPin className="w-4 h-4 text-slate-400" />
                                   <span>Saved Addresses</span>
-                                </Link>
-                                <Link
-                                  to="/my-custom-requests"
-                                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium transition-colors"
-                                >
-                                  <Sparkles className="w-4 h-4 text-[#FF7A1A]" />
-                                  <span>Custom Requests</span>
                                 </Link>
                               </>
                             )}

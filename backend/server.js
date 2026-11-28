@@ -31,6 +31,7 @@ const {
   sendPasswordResetEmail,
   sendLoginOtpEmail,
 } = require('./utils/emailService');
+const { isCloudinaryConfigured, uploadBufferToCloudinary } = require('./utils/cloudinaryUpload');
 const {
   CATEGORY_ALIASES,
   escapeRegex,
@@ -118,7 +119,7 @@ app.use((req, res, next) => {
 });
 app.use(cookieParser());
 
-// Setup Multer for simulated Cloud Storage (local uploads folder)
+// Setup Multer for Cloud Storage (Cloudinary when configured, local uploads folder fallback)
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
@@ -127,20 +128,8 @@ const privateUploadDir = path.join(__dirname, 'private_uploads');
 if (!fs.existsSync(privateUploadDir)) {
   fs.mkdirSync(privateUploadDir);
 }
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const extension = {
-      'image/jpeg': '.jpg',
-      'image/png': '.png',
-      'image/webp': '.webp',
-      'image/gif': '.gif',
-    }[file.mimetype];
-    cb(null, `${crypto.randomBytes(16).toString('hex')}${extension}`);
-  }
-});
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => {
     if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype)) {
@@ -152,14 +141,43 @@ const upload = multer({
   },
 });
 
-// Serve uploads statically
+// Serve local uploads fallback statically
 app.use('/uploads', express.static(uploadDir));
 
-// Image Upload Endpoint (Simulates Cloud Storage)
-app.post('/api/upload', requireAuth, upload.single('image'), (req, res) => {
+// Image Upload Endpoint (Cloudinary with local fallback)
+app.post('/api/upload', requireAuth, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-  const photoUrl = `${process.env.API_URL || `${req.protocol}://${req.get('host')}`}/uploads/${req.file.filename}`;
-  res.json({ success: true, photoUrl });
+
+  if (isCloudinaryConfigured()) {
+    try {
+      const uploaded = await uploadBufferToCloudinary({
+        buffer: req.file.buffer,
+        mimetype: req.file.mimetype,
+        originalname: req.file.originalname,
+        folder: process.env.CLOUDINARY_FOLDER || 'nivestry',
+      });
+      return res.json({ success: true, photoUrl: uploaded.secureUrl, storage: 'cloudinary' });
+    } catch (err) {
+      console.error('[Cloudinary Upload Error]', err.message);
+      return res.status(502).json({ success: false, message: `Cloud image upload failed: ${err.message}` });
+    }
+  }
+
+  try {
+    const extension = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+      'image/gif': '.gif',
+    }[req.file.mimetype] || '.jpg';
+    const filename = `${crypto.randomBytes(16).toString('hex')}${extension}`;
+    await fs.promises.writeFile(path.join(uploadDir, filename), req.file.buffer);
+    const photoUrl = `${process.env.API_URL || `${req.protocol}://${req.get('host')}`}/uploads/${filename}`;
+    return res.json({ success: true, photoUrl, storage: 'local' });
+  } catch (err) {
+    console.error('[Local Upload Error]', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to save uploaded image.' });
+  }
 });
 
 const documentStorage = multer.diskStorage({
